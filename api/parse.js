@@ -1,6 +1,6 @@
 // api/parse.js  –  Vercel Serverless Function
 // Proxies requests to Google Gemini so the API key never touches the browser.
-// Free tier: 1,500 requests/day, 0 cost — no billing required.
+// Free tier: gemini-2.5-flash-lite = 1,000 requests/day, 15 RPM — no billing required.
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {
@@ -17,12 +17,12 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: "Missing system or user prompt." });
   }
 
-  // Try models in order until one works
+  // Current free tier models (May 2026)
+  // gemini-2.5-flash-lite: 1,000 req/day, 15 RPM — best for free tier
+  // gemini-2.5-flash: 250 req/day, 10 RPM — fallback
   const models = [
-    "gemini-2.0-flash",
-    "gemini-1.5-flash",
-    "gemini-1.5-flash-latest",
-    "gemini-pro",
+    "gemini-2.5-flash-lite",
+    "gemini-2.5-flash",
   ];
 
   let lastError = null;
@@ -58,7 +58,7 @@ export default async function handler(req, res) {
         const errText = await geminiRes.text();
         lastError = `${model}: ${geminiRes.status} ${errText}`;
         console.error(`Model ${model} failed:`, lastError);
-        continue; // try next model
+        continue;
       }
 
       const data = await geminiRes.json();
@@ -76,6 +76,5 @@ export default async function handler(req, res) {
     }
   }
 
-  // All models failed
   return res.status(500).json({ error: `All models failed. Last error: ${lastError}` });
 }
