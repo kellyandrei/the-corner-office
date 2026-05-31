@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useAuth }     from "./hooks/useAuth";
 import { useTasks }    from "./hooks/useTasks";
 import { useSchedule } from "./hooks/useSchedule";
@@ -14,6 +14,25 @@ const T = {
   serif:  "'EB Garamond', Georgia, serif",
   mono:   "'IBM Plex Mono', monospace",
 };
+
+// ─────────────────────────────────────────────
+// Global animation styles
+// ─────────────────────────────────────────────
+const GlobalStyles = () => (
+  <style>{`
+    @keyframes co-spin   { to { transform: rotate(360deg); } }
+    @keyframes co-pulse  { 0%,100% { opacity:1; } 50% { opacity:0.3; } }
+    @keyframes co-fade   { from { opacity:0; transform:translateY(10px); } to { opacity:1; transform:translateY(0); } }
+    @keyframes co-slide  { from { opacity:0; transform:translateY(6px); } to { opacity:1; transform:translateY(0); } }
+    .co-fade  { animation: co-fade  0.5s ease forwards; }
+    .co-slide { animation: co-slide 0.35s ease forwards; }
+    * { box-sizing: border-box; }
+    ::selection { background: #8C7355; color: #F4F1EA; }
+    input[type="time"]::-webkit-calendar-picker-indicator { opacity: 0.3; cursor: pointer; }
+    textarea { transition: border-color 0.3s; }
+    button { transition: all 0.3s; }
+  `}</style>
+);
 
 // ─────────────────────────────────────────────
 // Helpers
@@ -47,6 +66,9 @@ const getTomorrow = (iso) => {
 };
 
 const userTZ = () => Intl.DateTimeFormat().resolvedOptions().timeZone || "Asia/Manila";
+
+const MONTHS = ["January","February","March","April","May","June",
+                "July","August","September","October","November","December"];
 
 // ─────────────────────────────────────────────
 // Primitives
@@ -96,18 +118,25 @@ const Toggle = ({ on, onToggle }) => (
 
 const Modal = ({ children, onClose }) => (
   <div onClick={e => e.target === e.currentTarget && onClose()} style={{
-    position: "fixed", inset: 0, background: "rgba(45,40,36,0.45)",
-    backdropFilter: "blur(12px)", display: "flex", alignItems: "center",
-    justifyContent: "center", zIndex: 200, padding: 16,
+    position: "fixed", inset: 0, background: "rgba(45,40,36,0.5)",
+    backdropFilter: "blur(16px)", display: "flex", alignItems: "center",
+    justifyContent: "center", zIndex: 300, padding: 16,
+    animation: "co-fade 0.25s ease",
   }}>
     <div style={{
       background: T.paper, border: `1px solid rgba(45,40,36,0.2)`,
       padding: 32, maxWidth: 480, width: "100%", position: "relative",
+      animation: "co-slide 0.3s ease",
     }}>
       <button onClick={onClose} style={{
         position: "absolute", top: 12, right: 12, background: "none", border: "none",
         cursor: "pointer", color: "rgba(45,40,36,0.4)", fontSize: 20, lineHeight: 1,
-      }}>×</button>
+        transition: "color 0.2s",
+      }}
+        onMouseEnter={e => e.currentTarget.style.color = T.ink}
+        onMouseLeave={e => e.currentTarget.style.color = "rgba(45,40,36,0.4)"}>
+        ×
+      </button>
       {children}
     </div>
   </div>
@@ -119,82 +148,362 @@ const Toast = ({ msg }) => msg ? (
     background: T.ink, color: T.paper, padding: "12px 24px",
     fontFamily: T.mono, fontSize: 10, letterSpacing: "0.2em", textTransform: "uppercase",
     border: `1px solid rgba(140,115,85,0.3)`, zIndex: 999, whiteSpace: "nowrap",
-    pointerEvents: "none",
+    pointerEvents: "none", animation: "co-slide 0.3s ease",
   }}>{msg}</div>
 ) : null;
 
 // ─────────────────────────────────────────────
+// Calendar icon SVG
+// ─────────────────────────────────────────────
+const CalendarIcon = ({ size = 14, color = "currentColor" }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none"
+    stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+    <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
+    <line x1="16" y1="2" x2="16" y2="6"/>
+    <line x1="8"  y1="2" x2="8"  y2="6"/>
+    <line x1="3"  y1="10" x2="21" y2="10"/>
+  </svg>
+);
+
+// ─────────────────────────────────────────────
+// Calendar overlay
+// ─────────────────────────────────────────────
+const CalendarOverlay = ({ tasks, onClose, tz }) => {
+  const userTimezone  = tz || userTZ();
+  const todayISO      = getLocalDateISO(userTimezone);
+  const [tY, tM]      = todayISO.split("-").map(Number);
+  const [viewMode,    setViewMode]    = useState("month");
+  const [currentDate, setCurrentDate] = useState(new Date(tY, tM - 1, 1));
+
+  const year  = currentDate.getFullYear();
+  const month = currentDate.getMonth();
+
+  const prev = () => setCurrentDate(d =>
+    viewMode === "month" ? new Date(d.getFullYear(), d.getMonth() - 1, 1)
+                         : new Date(d.getFullYear() - 1, d.getMonth(), 1));
+  const next = () => setCurrentDate(d =>
+    viewMode === "month" ? new Date(d.getFullYear(), d.getMonth() + 1, 1)
+                         : new Date(d.getFullYear() + 1, d.getMonth(), 1));
+
+  const getDotsForDay = (y, m, day) => {
+    const iso = `${y}-${String(m+1).padStart(2,"0")}-${String(day).padStart(2,"0")}`;
+    return tasks
+      .filter(t => t.scheduled_date === iso && t.status !== "completed")
+      .map(t => t.urgency === "High" && t.importance === "High" ? "crucial"
+               : (t.urgency === "High" || t.importance === "High")  ? "important"
+               : "routine");
+  };
+
+  const getActiveCountForMonth = (y, m) => {
+    const prefix = `${y}-${String(m+1).padStart(2,"0")}`;
+    return tasks.filter(t => t.scheduled_date?.startsWith(prefix) && t.status !== "completed").length;
+  };
+
+  const daysInMonth   = new Date(year, month + 1, 0).getDate();
+  const startOffset   = new Date(year, month, 1).getDay();
+  const daysGrid      = Array(startOffset).fill(null)
+    .concat(Array.from({ length: daysInMonth }, (_, i) => i + 1));
+  const weekDays      = ["Su","Mo","Tu","We","Th","Fr","Sa"];
+
+  const dotColor = { crucial: T.walnut, important: T.brass, routine: "rgba(45,40,36,0.3)" };
+
+  return (
+    <div onClick={e => e.target === e.currentTarget && onClose()}
+      style={{
+        position: "fixed", inset: 0, background: "rgba(45,40,36,0.5)",
+        backdropFilter: "blur(20px)", display: "flex", alignItems: "center",
+        justifyContent: "center", zIndex: 300, padding: 16,
+        animation: "co-fade 0.25s ease",
+      }}>
+      <div style={{
+        background: T.paper, border: `1px solid rgba(45,40,36,0.2)`,
+        padding: 32, maxWidth: 520, width: "100%", position: "relative",
+        animation: "co-slide 0.3s ease",
+      }}>
+        <button onClick={onClose} style={{
+          position: "absolute", top: 12, right: 12, background: "none", border: "none",
+          cursor: "pointer", color: "rgba(45,40,36,0.4)", fontSize: 20, lineHeight: 1,
+        }}>×</button>
+
+        {/* Header */}
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24, paddingBottom: 16, borderBottom: `1px solid rgba(45,40,36,0.1)` }}>
+          <div>
+            <div style={{ fontFamily: T.serif, fontSize: 20, color: T.walnut, display: "flex", alignItems: "center", gap: 8 }}>
+              <CalendarIcon size={18} color={T.brass} />
+              {viewMode === "month" ? `${MONTHS[month]} ${year}` : `${year} — Annual View`}
+            </div>
+            <p style={{ fontFamily: T.mono, fontSize: 9, letterSpacing: "0.2em", textTransform: "uppercase", color: T.brass, marginTop: 4 }}>
+              {viewMode === "month" ? "Visual Brief Ledger" : "Annual Desk View"}
+            </p>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <button onClick={() => setViewMode(v => v === "month" ? "year" : "month")}
+              style={{ fontFamily: T.mono, fontSize: 9, textTransform: "uppercase", letterSpacing: "0.15em", border: `1px solid rgba(45,40,36,0.15)`, background: "none", padding: "5px 10px", cursor: "pointer", color: T.brass }}>
+              {viewMode === "month" ? "Year" : "Month"}
+            </button>
+            <div style={{ display: "flex", gap: 2, borderLeft: `1px solid rgba(45,40,36,0.1)`, paddingLeft: 8 }}>
+              {[prev, next].map((fn, i) => (
+                <button key={i} onClick={fn} style={{ background: "none", border: "none", cursor: "pointer", color: "rgba(45,40,36,0.5)", padding: "4px 6px", fontSize: 14, lineHeight: 1 }}>
+                  {i === 0 ? "‹" : "›"}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* Month view */}
+        {viewMode === "month" && (
+          <>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", textAlign: "center", fontFamily: T.mono, fontSize: 9, textTransform: "uppercase", color: "rgba(45,40,36,0.4)", letterSpacing: "0.1em", paddingBottom: 8, borderBottom: `1px solid rgba(45,40,36,0.07)`, marginBottom: 8 }}>
+              {weekDays.map(d => <span key={d}>{d}</span>)}
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: "2px 0", textAlign: "center", fontFamily: T.mono, fontSize: 11 }}>
+              {daysGrid.map((day, idx) => {
+                if (!day) return <div key={`e-${idx}`} />;
+                const dots    = getDotsForDay(year, month, day);
+                const isToday = day === parseInt(todayISO.split("-")[2]) &&
+                                month === tM - 1 && year === tY;
+                return (
+                  <div key={day} style={{ padding: "6px 0", display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
+                    <span style={{
+                      width: 22, height: 22, display: "flex", alignItems: "center", justifyContent: "center",
+                      border: isToday ? `1px solid ${T.ink}` : "none",
+                      color: dots.length > 0 ? T.brass : "rgba(45,40,36,0.55)",
+                      fontWeight: isToday ? 600 : 400,
+                    }}>{day}</span>
+                    {dots.length > 0 && (
+                      <div style={{ display: "flex", gap: 2 }}>
+                        {dots.slice(0, 3).map((p, di) => (
+                          <span key={di} style={{ width: 4, height: 4, borderRadius: "50%", background: dotColor[p] }} />
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </>
+        )}
+
+        {/* Year view */}
+        {viewMode === "year" && (
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 8 }}>
+            {MONTHS.map((m, mi) => {
+              const active    = getActiveCountForMonth(year, mi);
+              const isCurrent = mi === tM - 1 && year === tY;
+              return (
+                <button key={m}
+                  onClick={() => { setCurrentDate(new Date(year, mi, 1)); setViewMode("month"); }}
+                  style={{
+                    background: "none", border: `1px solid ${isCurrent ? T.brass : "rgba(45,40,36,0.12)"}`,
+                    padding: "12px 8px", cursor: "pointer", textAlign: "center",
+                    transition: "all 0.25s",
+                  }}
+                  onMouseEnter={e => e.currentTarget.style.background = "rgba(45,40,36,0.04)"}
+                  onMouseLeave={e => e.currentTarget.style.background = "none"}>
+                  <div style={{ fontFamily: T.serif, fontSize: 13, color: isCurrent ? T.brass : T.ink, marginBottom: 4 }}>{m}</div>
+                  <div style={{ fontFamily: T.mono, fontSize: 8, textTransform: "uppercase", letterSpacing: "0.15em", color: "rgba(45,40,36,0.45)" }}>
+                    {active > 0 ? `${active} active` : "Clear"}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        )}
+
+        {/* Legend */}
+        <div style={{ marginTop: 20, paddingTop: 14, borderTop: `1px solid rgba(45,40,36,0.08)`, display: "flex", justifyContent: "space-between", alignItems: "center", fontFamily: T.mono, fontSize: 9, textTransform: "uppercase", letterSpacing: "0.1em", color: "rgba(45,40,36,0.45)" }}>
+          <div style={{ display: "flex", gap: 16 }}>
+            {[["crucial","Crucial"],["important","Important"],["routine","Routine"]].map(([k,label]) => (
+              <span key={k} style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                <span style={{ width: 6, height: 6, borderRadius: "50%", background: dotColor[k], display: "inline-block" }} />
+                {label}
+              </span>
+            ))}
+          </div>
+          <span>{userTimezone}</span>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ─────────────────────────────────────────────
+// Lock confirmation modal
+// ─────────────────────────────────────────────
+const LockConfirm = ({ onConfirm, onCancel }) => (
+  <Modal onClose={onCancel}>
+    <div style={{ textAlign: "center" }}>
+      <div style={{ fontFamily: T.serif, fontSize: 22, color: T.walnut, marginBottom: 12 }}>
+        Lock the office?
+      </div>
+      <p style={{ fontFamily: T.serif, fontSize: 13, color: "rgba(45,40,36,0.7)", lineHeight: 1.7, marginBottom: 28 }}>
+        You'll be signed out. Your desk will be exactly as you left it when you return.
+      </p>
+      <Btn onClick={onConfirm} style={{ width: "100%", justifyContent: "center", marginBottom: 10 }}>
+        Lock it.
+      </Btn>
+      <Btn variant="secondary" onClick={onCancel} style={{ width: "100%", justifyContent: "center" }}>
+        Stay at the desk.
+      </Btn>
+    </div>
+  </Modal>
+);
+
+// ─────────────────────────────────────────────
 // Shell / Layout
 // ─────────────────────────────────────────────
-const Shell = ({ view, setView, taskCount, toastMsg, onSignOut, children }) => (
-  <div style={{
-    minHeight: "100vh", background: T.paper, color: T.ink, fontFamily: T.mono,
-    display: "flex", flexDirection: "column", alignItems: "center",
-    padding: "32px 24px",
-    backgroundImage: "radial-gradient(rgba(45,40,36,0.055) 1px, transparent 1px)",
-    backgroundSize: "24px 24px",
-  }}>
-    {(view === "dump" || view === "desk") && (
-      <nav style={{
-        width: "100%", maxWidth: 720,
-        display: "flex", justifyContent: "space-between", alignItems: "center",
-        paddingBottom: 20, borderBottom: `1px solid rgba(45,40,36,0.1)`,
-        marginBottom: 48,
-      }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <span style={{
-            fontFamily: T.serif, fontSize: 17, fontWeight: 600, letterSpacing: "0.15em",
-            border: `1px solid rgba(45,40,36,0.15)`, padding: "3px 8px", color: T.walnut,
-          }}>C/O</span>
-          <span style={{ fontSize: 9, letterSpacing: "0.25em", textTransform: "uppercase", color: T.brass }}>
-            The Corner Office
-          </span>
-        </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-          <Btn variant="ghost" onClick={() => setView("dump")}
-            style={{ color: view === "dump" ? T.brass : T.ink, opacity: view === "dump" ? 1 : 0.6 }}>
-            Inbox
-          </Btn>
-          <Btn variant="ghost" onClick={() => setView("desk")}
-            style={{ color: view === "desk" ? T.brass : T.ink, opacity: view === "desk" ? 1 : 0.6 }}>
-            The Desk
-            {taskCount > 0 && (
-              <span style={{
-                background: T.brass, color: T.paper, fontSize: 8,
-                padding: "1px 5px", fontFamily: T.mono, marginLeft: 4,
-              }}>{taskCount}</span>
-            )}
-          </Btn>
-          <Btn variant="ghost" onClick={onSignOut} style={{
-            color: T.brass, opacity: 1,
-            borderLeft: `1px solid rgba(140,115,85,0.25)`,
-            paddingLeft: 14, marginLeft: 4,
-          }}>
-            Lock
-          </Btn>
-        </div>
-      </nav>
-    )}
+const Shell = ({ view, setView, taskCount, toastMsg, onSignOut, tasks, schedule, children }) => {
+  const [showLockConfirm, setShowLockConfirm] = useState(false);
+  const [showCalendar,    setShowCalendar]    = useState(false);
 
-    <main style={{ width: "100%", maxWidth: 720, flex: 1 }}>
-      {children}
-    </main>
-
-    <footer style={{
-      width: "100%", maxWidth: 720, textAlign: "center", marginTop: 64,
-      paddingTop: 20, borderTop: `1px solid rgba(45,40,36,0.05)`,
-      fontSize: 9, letterSpacing: "0.3em", textTransform: "uppercase",
-      color: "rgba(45,40,36,0.3)", userSelect: "none",
+  return (
+    <div style={{
+      minHeight: "100vh", background: T.paper, color: T.ink, fontFamily: T.mono,
+      display: "flex", flexDirection: "column", alignItems: "center",
+      padding: "32px 24px",
+      backgroundImage: "radial-gradient(rgba(45,40,36,0.055) 1px, transparent 1px)",
+      backgroundSize: "24px 24px",
     }}>
-      The Corner Office · Confidentially Guarded
-    </footer>
+      <GlobalStyles />
 
-    <Toast msg={toastMsg} />
+      {(view === "dump" || view === "desk") && (
+        <nav style={{
+          width: "100%", maxWidth: 720,
+          display: "flex", justifyContent: "space-between", alignItems: "center",
+          paddingBottom: 20, borderBottom: `1px solid rgba(45,40,36,0.1)`,
+          marginBottom: 48,
+        }} className="co-fade">
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <span style={{
+              fontFamily: T.serif, fontSize: 17, fontWeight: 600, letterSpacing: "0.15em",
+              border: `1px solid rgba(45,40,36,0.15)`, padding: "3px 8px", color: T.walnut,
+            }}>C/O</span>
+            <span style={{ fontSize: 9, letterSpacing: "0.25em", textTransform: "uppercase", color: T.brass }}>
+              The Corner Office
+            </span>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+            <Btn variant="ghost" onClick={() => setView("dump")}
+              style={{ color: view === "dump" ? T.brass : T.ink, opacity: view === "dump" ? 1 : 0.6 }}>
+              Inbox
+            </Btn>
+            <Btn variant="ghost" onClick={() => setView("desk")}
+              style={{ color: view === "desk" ? T.brass : T.ink, opacity: view === "desk" ? 1 : 0.6 }}>
+              The Desk
+              {taskCount > 0 && (
+                <span style={{ background: T.brass, color: T.paper, fontSize: 8, padding: "1px 5px", fontFamily: T.mono, marginLeft: 4 }}>
+                  {taskCount}
+                </span>
+              )}
+            </Btn>
+            {/* Calendar icon button */}
+            <button
+              onClick={() => setShowCalendar(true)}
+              title="Desk Calendar"
+              style={{ background: "none", border: `1px solid rgba(45,40,36,0.15)`, cursor: "pointer", color: "rgba(45,40,36,0.6)", padding: "7px 9px", display: "flex", alignItems: "center", marginLeft: 4, transition: "all 0.25s" }}
+              onMouseEnter={e => { e.currentTarget.style.color = T.brass; e.currentTarget.style.borderColor = T.brass; }}
+              onMouseLeave={e => { e.currentTarget.style.color = "rgba(45,40,36,0.6)"; e.currentTarget.style.borderColor = "rgba(45,40,36,0.15)"; }}>
+              <CalendarIcon size={14} />
+            </button>
+            <Btn variant="ghost" onClick={() => setShowLockConfirm(true)} style={{
+              color: T.brass, opacity: 1,
+              borderLeft: `1px solid rgba(140,115,85,0.25)`,
+              paddingLeft: 14, marginLeft: 4,
+            }}>
+              Lock
+            </Btn>
+          </div>
+        </nav>
+      )}
+
+      <main style={{ width: "100%", maxWidth: 720, flex: 1 }}>
+        {children}
+      </main>
+
+      <footer style={{
+        width: "100%", maxWidth: 720, textAlign: "center", marginTop: 64,
+        paddingTop: 20, borderTop: `1px solid rgba(45,40,36,0.05)`,
+        fontSize: 9, letterSpacing: "0.25em", textTransform: "uppercase",
+        color: "rgba(45,40,36,0.3)", userSelect: "none",
+      }}>
+        The Corner Office · All Rights Reserved 2026
+      </footer>
+
+      <Toast msg={toastMsg} />
+
+      {showLockConfirm && (
+        <LockConfirm
+          onConfirm={() => { setShowLockConfirm(false); onSignOut(); }}
+          onCancel={() => setShowLockConfirm(false)}
+        />
+      )}
+
+      {showCalendar && (
+        <CalendarOverlay
+          tasks={tasks || []}
+          onClose={() => setShowCalendar(false)}
+          tz={schedule?.timezone}
+        />
+      )}
+    </div>
+  );
+};
+
+// ─────────────────────────────────────────────
+// Landing page
+// ─────────────────────────────────────────────
+const Landing = ({ onEnter }) => (
+  <div className="co-fade" style={{ maxWidth: 680, margin: "auto", paddingTop: 32, paddingBottom: 64 }}>
+    <GlobalStyles />
+    {/* Hero */}
+    <div style={{ textAlign: "center", paddingBottom: 64, borderBottom: `1px solid rgba(45,40,36,0.08)`, marginBottom: 64 }}>
+      <div style={{ fontFamily: T.serif, fontSize: 100, fontWeight: 300, letterSpacing: "0.15em", color: T.walnut, lineHeight: 1, marginBottom: 16 }}>
+        C/O
+      </div>
+      <p style={{ fontFamily: T.mono, fontSize: 9, letterSpacing: "0.4em", textTransform: "uppercase", color: T.brass, marginBottom: 32 }}>
+        The Corner Office
+      </p>
+      <div style={{ fontFamily: T.serif, fontSize: 28, color: T.ink, lineHeight: 1.4, maxWidth: 480, margin: "0 auto 16px", fontWeight: 400 }}>
+        The desk where executives think clearly.
+      </div>
+      <p style={{ fontFamily: T.serif, fontSize: 15, color: "rgba(45,40,36,0.6)", lineHeight: 1.7, maxWidth: 400, margin: "0 auto 40px", fontStyle: "italic" }}>
+        Dump everything on your mind. Your Chief of Staff sorts, schedules, and hands back a clean brief — one task at a time.
+      </p>
+      <Btn onClick={onEnter} style={{ fontSize: 11, letterSpacing: "0.3em", padding: "14px 36px" }}>
+        Enter the Office
+      </Btn>
+    </div>
+
+    {/* Three pillars */}
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 32, marginBottom: 64 }}>
+      {[
+        { icon: "📥", title: "The Dump", body: "Write anything. Meeting notes, scattered thoughts, half-formed ideas. Nothing is too messy." },
+        { icon: "⚡", title: "AI Sorting", body: "Your Chief of Staff parses urgency, importance, and deadlines. You get a prioritized brief." },
+        { icon: "🗂", title: "The Desk", body: "One cognitive load at a time. Morning, Afternoon, Evening — your day, structured." },
+      ].map(p => (
+        <div key={p.title} style={{ borderTop: `2px solid rgba(45,40,36,0.08)`, paddingTop: 20 }}>
+          <div style={{ fontSize: 20, marginBottom: 10 }}>{p.icon}</div>
+          <div style={{ fontFamily: T.serif, fontSize: 16, color: T.walnut, marginBottom: 8 }}>{p.title}</div>
+          <p style={{ fontFamily: T.serif, fontSize: 12, color: "rgba(45,40,36,0.6)", lineHeight: 1.7, fontStyle: "italic" }}>{p.body}</p>
+        </div>
+      ))}
+    </div>
+
+    {/* Tone line */}
+    <div style={{ textAlign: "center", padding: "32px 0", borderTop: `1px solid rgba(45,40,36,0.08)` }}>
+      <p style={{ fontFamily: T.serif, fontSize: 18, color: "rgba(45,40,36,0.45)", fontStyle: "italic" }}>
+        "The desk is clear. Enjoy it while it lasts."
+      </p>
+      <p style={{ fontFamily: T.mono, fontSize: 9, textTransform: "uppercase", letterSpacing: "0.2em", color: "rgba(45,40,36,0.3)", marginTop: 8 }}>
+        — Your Chief of Staff
+      </p>
+    </div>
   </div>
 );
 
 // ─────────────────────────────────────────────
-// Lobby (real Supabase auth)
+// Lobby (auth)
 // ─────────────────────────────────────────────
 const Lobby = ({ onSignIn, onSignUp }) => {
   const [isSignUp,  setIsSignUp]  = useState(false);
@@ -202,7 +511,7 @@ const Lobby = ({ onSignIn, onSignUp }) => {
   const [password,  setPassword]  = useState("");
   const [error,     setError]     = useState(null);
   const [working,   setWorking]   = useState(false);
-  const [confirmed, setConfirmed] = useState(false); // email confirmation pending
+  const [confirmed, setConfirmed] = useState(false);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -211,10 +520,9 @@ const Lobby = ({ onSignIn, onSignUp }) => {
     try {
       if (isSignUp) {
         await onSignUp(email, password);
-        setConfirmed(true); // Supabase sends a confirmation email by default
+        setConfirmed(true);
       } else {
         await onSignIn(email, password);
-        // onSignIn success triggers useAuth listener → App re-renders automatically
       }
     } catch (err) {
       setError(err.message || "Something went wrong. Try again.");
@@ -225,12 +533,15 @@ const Lobby = ({ onSignIn, onSignUp }) => {
 
   if (confirmed) {
     return (
-      <div style={{ maxWidth: 400, margin: "auto", paddingTop: 48, textAlign: "center" }}>
+      <div className="co-fade" style={{ maxWidth: 400, margin: "auto", paddingTop: 48, textAlign: "center" }}>
         <div style={{ fontFamily: T.serif, fontSize: 88, fontWeight: 300, letterSpacing: "0.2em", color: T.walnut, lineHeight: 1 }}>C/O</div>
         <div style={{ marginTop: 40, padding: 32, border: `1px solid rgba(45,40,36,0.12)`, background: "rgba(255,255,255,0.12)" }}>
           <div style={{ fontFamily: T.serif, fontSize: 20, color: T.walnut, marginBottom: 12 }}>Check your inbox.</div>
-          <p style={{ fontFamily: T.serif, fontSize: 13, color: "rgba(45,40,36,0.7)", lineHeight: 1.6, marginBottom: 20 }}>
-            A confirmation link has been sent to <strong>{email}</strong>. Click it to activate your desk.
+          <p style={{ fontFamily: T.serif, fontSize: 13, color: "rgba(45,40,36,0.7)", lineHeight: 1.7, marginBottom: 8 }}>
+            A confirmation link has been sent to <strong>{email}</strong>.
+          </p>
+          <p style={{ fontFamily: T.mono, fontSize: 9, color: T.brass, letterSpacing: "0.15em", textTransform: "uppercase", lineHeight: 1.8, marginBottom: 20, padding: "10px 12px", border: `1px solid rgba(140,115,85,0.25)`, background: "rgba(140,115,85,0.05)" }}>
+            ⚠ Can't find it? Check your spam or junk folder — confirmation emails occasionally land there.
           </p>
           <button onClick={() => { setConfirmed(false); setIsSignUp(false); }}
             style={{ fontFamily: T.mono, fontSize: 9, textTransform: "uppercase", letterSpacing: "0.2em", background: "none", border: "none", cursor: "pointer", color: T.brass, textDecoration: "underline" }}>
@@ -242,16 +553,13 @@ const Lobby = ({ onSignIn, onSignUp }) => {
   }
 
   return (
-    <div style={{ maxWidth: 400, margin: "auto", paddingTop: 48, textAlign: "center" }}>
+    <div className="co-fade" style={{ maxWidth: 400, margin: "auto", paddingTop: 48, textAlign: "center" }}>
       <div style={{ fontFamily: T.serif, fontSize: 88, fontWeight: 300, letterSpacing: "0.2em", color: T.walnut, lineHeight: 1 }}>C/O</div>
       <p style={{ fontSize: 9, letterSpacing: "0.4em", textTransform: "uppercase", color: T.brass, marginTop: 8, marginBottom: 40, fontFamily: T.mono }}>
         A quiet place for your focus.
       </p>
 
-      <form onSubmit={handleSubmit} style={{
-        background: "rgba(255,255,255,0.12)", border: `1px solid rgba(45,40,36,0.12)`,
-        padding: 32, textAlign: "left",
-      }}>
+      <form onSubmit={handleSubmit} style={{ background: "rgba(255,255,255,0.12)", border: `1px solid rgba(45,40,36,0.12)`, padding: 32, textAlign: "left" }}>
         <div style={{ fontFamily: T.serif, fontSize: 18, textAlign: "center", marginBottom: 24, paddingBottom: 16, borderBottom: `1px solid rgba(45,40,36,0.07)` }}>
           {isSignUp ? "Let's set up your office." : "Credentials, please."}
         </div>
@@ -266,14 +574,14 @@ const Lobby = ({ onSignIn, onSignUp }) => {
           <Label>Identity (Email)</Label>
           <input required type="email" value={email} onChange={e => setEmail(e.target.value)}
             placeholder={isSignUp ? "executive@domain.co" : "executive@corneroffice.co"}
-            style={{ width: "100%", background: "transparent", border: "none", borderBottom: `1px solid rgba(45,40,36,0.2)`, padding: "6px 0", fontFamily: T.serif, fontSize: 16, color: T.ink, outline: "none" }} />
+            style={{ width: "100%", background: "transparent", border: "none", borderBottom: `1px solid rgba(45,40,36,0.2)`, padding: "6px 0", fontFamily: T.serif, fontSize: 16, color: T.ink, outline: "none", transition: "border-color 0.3s" }} />
         </div>
 
         <div style={{ marginBottom: 24 }}>
           <Label>Security Token</Label>
           <input required type="password" value={password} onChange={e => setPassword(e.target.value)}
             placeholder="••••••••" minLength={6}
-            style={{ width: "100%", background: "transparent", border: "none", borderBottom: `1px solid rgba(45,40,36,0.2)`, padding: "6px 0", fontFamily: T.serif, fontSize: 16, color: T.ink, outline: "none" }} />
+            style={{ width: "100%", background: "transparent", border: "none", borderBottom: `1px solid rgba(45,40,36,0.2)`, padding: "6px 0", fontFamily: T.serif, fontSize: 16, color: T.ink, outline: "none", transition: "border-color 0.3s" }} />
         </div>
 
         <Btn type="submit" disabled={working} style={{ width: "100%", justifyContent: "center" }}>
@@ -312,19 +620,15 @@ const Interview = ({ onComplete, initial }) => {
     <div>
       <Label>{label}</Label>
       <input type="time" value={prefs[key]} onChange={e => set(key, e.target.value)}
-        style={{ background: "transparent", border: "none", borderBottom: `1px solid rgba(45,40,36,0.2)`, padding: "6px 0", fontFamily: T.mono, fontSize: 12, color: T.ink, outline: "none", width: "100%" }} />
+        style={{ background: "transparent", border: "none", borderBottom: `1px solid rgba(45,40,36,0.2)`, padding: "6px 0", fontFamily: T.mono, fontSize: 12, color: T.ink, outline: "none", width: "100%", transition: "border-color 0.3s" }} />
     </div>
   );
 
   return (
-    <div style={{ maxWidth: 560, margin: "auto", paddingBottom: 48 }}>
+    <div className="co-fade" style={{ maxWidth: 560, margin: "auto", paddingBottom: 48 }}>
       <div style={{ borderBottom: `1px solid rgba(45,40,36,0.1)`, paddingBottom: 24, marginBottom: 32 }}>
-        <div style={{ fontFamily: T.serif, fontSize: 28, color: T.walnut }}>
-          Before we sort the desk, tell us how you work.
-        </div>
-        <p style={{ fontSize: 9, letterSpacing: "0.25em", textTransform: "uppercase", color: "rgba(45,40,36,0.5)", marginTop: 10, fontFamily: T.mono }}>
-          Ground rules & preferences
-        </p>
+        <div style={{ fontFamily: T.serif, fontSize: 28, color: T.walnut }}>Before we sort the desk, tell us how you work.</div>
+        <p style={{ fontSize: 9, letterSpacing: "0.25em", textTransform: "uppercase", color: "rgba(45,40,36,0.5)", marginTop: 10, fontFamily: T.mono }}>Ground rules & preferences</p>
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 32, marginBottom: 28 }}>
@@ -353,14 +657,11 @@ const Interview = ({ onComplete, initial }) => {
       </div>
 
       <div style={{ borderTop: `1px solid rgba(45,40,36,0.1)`, paddingTop: 24, marginBottom: 28 }}>
-        <div onClick={() => set("focusMode", !prefs.focusMode)}
-          style={{ display: "flex", alignItems: "center", gap: 14, cursor: "pointer" }}>
+        <div onClick={() => set("focusMode", !prefs.focusMode)} style={{ display: "flex", alignItems: "center", gap: 14, cursor: "pointer" }}>
           <Toggle on={prefs.focusMode} onToggle={() => set("focusMode", !prefs.focusMode)} />
           <div>
             <div style={{ fontSize: 13, fontWeight: 500, color: T.walnut, marginBottom: 3 }}>Focus Mode</div>
-            <p style={{ fontSize: 11, fontFamily: T.serif, color: "rgba(45,40,36,0.6)" }}>
-              Strictly limit today's desk to 3 balanced priorities.
-            </p>
+            <p style={{ fontSize: 11, fontFamily: T.serif, color: "rgba(45,40,36,0.6)" }}>Strictly limit today's desk to 3 balanced priorities.</p>
           </div>
         </div>
       </div>
@@ -372,9 +673,7 @@ const Interview = ({ onComplete, initial }) => {
           style={{ width: "100%", background: "transparent", border: `1px solid rgba(45,40,36,0.15)`, padding: 12, fontFamily: T.serif, fontSize: 13, height: 80, resize: "none", outline: "none", color: T.ink, lineHeight: 1.6 }} />
       </div>
 
-      <Btn onClick={() => onComplete(prefs)} style={{ width: "100%", justifyContent: "center" }}>
-        That'll do.
-      </Btn>
+      <Btn onClick={() => onComplete(prefs)} style={{ width: "100%", justifyContent: "center" }}>That'll do.</Btn>
     </div>
   );
 };
@@ -393,7 +692,7 @@ const Dump = ({ onSubmit, prevInput, ctx, apiError, clearError }) => {
   const tz = ctx?.timezone || userTZ();
 
   return (
-    <div style={{ maxWidth: 680, margin: "auto", paddingBottom: 32 }}>
+    <div className="co-fade" style={{ maxWidth: 680, margin: "auto", paddingBottom: 32 }}>
       {apiError && (
         <div style={{ border: `1px solid rgba(180,50,50,0.3)`, background: "rgba(45,40,36,0.04)", color: "#7a2020", padding: "12px 16px", fontFamily: T.mono, fontSize: 10, display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 28, gap: 12 }}>
           <span>{apiError}</span>
@@ -422,7 +721,9 @@ const Dump = ({ onSubmit, prevInput, ctx, apiError, clearError }) => {
         </div>
       </div>
 
-      <div style={{ borderLeft: `2px solid rgba(140,115,85,0.35)`, background: "rgba(255,255,255,0.08)", marginBottom: 28 }}>
+      <div style={{ borderLeft: `2px solid rgba(140,115,85,0.35)`, background: "rgba(255,255,255,0.08)", marginBottom: 28, transition: "border-color 0.3s" }}
+        onFocus={e => e.currentTarget.style.borderLeftColor = T.brass}
+        onBlur={e => e.currentTarget.style.borderLeftColor = "rgba(140,115,85,0.35)"}>
         <textarea autoFocus value={text} onChange={e => setText(e.target.value)}
           placeholder="Unload here. Chaotic lists, raw notes, meeting transcripts... I'll organize it."
           style={{ width: "100%", background: "transparent", border: "none", padding: "16px 20px", fontFamily: T.serif, fontSize: 18, resize: "none", height: "35vh", outline: "none", color: T.ink, lineHeight: 1.7 }} />
@@ -458,20 +759,21 @@ const Loading = () => {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "50vh", gap: 28 }}>
-      <style>{`@keyframes co-spin{to{transform:rotate(360deg)}}`}</style>
       <div style={{ width: 28, height: 28, border: `1.5px solid rgba(140,115,85,0.3)`, borderTop: `1.5px solid ${T.brass}`, borderRadius: "50%", animation: "co-spin 1s linear infinite" }} />
       <div style={{ textAlign: "center" }}>
         <div style={{ fontFamily: T.serif, fontSize: 22, color: "rgba(45,40,36,0.8)", marginBottom: 10 }}>Sorting the brief...</div>
-        <p style={{ fontFamily: T.mono, fontSize: 9, letterSpacing: "0.2em", textTransform: "uppercase", color: T.brass }}>{LOADING_STEPS[step]}</p>
+        <p style={{ fontFamily: T.mono, fontSize: 9, letterSpacing: "0.2em", textTransform: "uppercase", color: T.brass, transition: "opacity 0.5s" }}>
+          {LOADING_STEPS[step]}
+        </p>
       </div>
     </div>
   );
 };
 
 // ─────────────────────────────────────────────
-// TaskCard
+// TaskCard — with focus blur on expand
 // ─────────────────────────────────────────────
-const TaskCard = ({ task, onToggleComplete, onToggleSubtask, onDelete }) => {
+const TaskCard = ({ task, onToggleComplete, onToggleSubtask, onDelete, isBlurred }) => {
   const [expanded, setExpanded] = useState(false);
   const done     = task.status === "completed";
   const subs     = task.subtasks || [];
@@ -479,7 +781,13 @@ const TaskCard = ({ task, onToggleComplete, onToggleSubtask, onDelete }) => {
   const crucial  = task.urgency === "High" && task.importance === "High";
 
   return (
-    <div style={{ borderBottom: `1px solid rgba(45,40,36,0.1)`, padding: "20px 0", opacity: done ? 0.4 : 1, transition: "opacity 0.5s" }}>
+    <div style={{
+      borderBottom: `1px solid rgba(45,40,36,0.1)`, padding: "20px 0",
+      opacity: done ? 0.4 : isBlurred ? 0.18 : 1,
+      filter: isBlurred ? "blur(1.5px)" : "none",
+      transition: "opacity 0.4s, filter 0.4s",
+      pointerEvents: isBlurred ? "none" : "auto",
+    }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 16, cursor: "pointer" }}
         onClick={() => setExpanded(x => !x)}>
 
@@ -494,7 +802,7 @@ const TaskCard = ({ task, onToggleComplete, onToggleSubtask, onDelete }) => {
         </button>
 
         <div style={{ flex: 1 }}>
-          <div style={{ fontFamily: T.serif, fontSize: 17, color: done ? "rgba(45,40,36,0.6)" : T.walnut, textDecoration: done ? "line-through" : "none", marginBottom: 6 }}>
+          <div style={{ fontFamily: T.serif, fontSize: 17, color: done ? "rgba(45,40,36,0.6)" : T.walnut, textDecoration: done ? "line-through" : "none", marginBottom: 6, transition: "color 0.3s" }}>
             {task.title}
           </div>
           <div style={{ display: "flex", flexWrap: "wrap", gap: "4px 10px", fontFamily: T.mono, fontSize: 9, color: "rgba(45,40,36,0.5)", alignItems: "center" }}>
@@ -517,12 +825,12 @@ const TaskCard = ({ task, onToggleComplete, onToggleSubtask, onDelete }) => {
               <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
             </svg>
           </button>
-          <span style={{ color: "rgba(45,40,36,0.3)", fontSize: 10 }}>{expanded ? "▲" : "▼"}</span>
+          <span style={{ color: "rgba(45,40,36,0.3)", fontSize: 10, transition: "transform 0.3s", display: "inline-block", transform: expanded ? "rotate(180deg)" : "rotate(0deg)" }}>▼</span>
         </div>
       </div>
 
       {expanded && (
-        <div style={{ paddingLeft: 36, paddingTop: 14, display: "flex", flexDirection: "column", gap: 14 }}>
+        <div className="co-slide" style={{ paddingLeft: 36, paddingTop: 14, display: "flex", flexDirection: "column", gap: 14 }}>
           {task.description && (
             <p style={{ fontFamily: T.serif, fontSize: 13, fontStyle: "italic", color: "rgba(45,40,36,0.75)", borderLeft: `2px solid rgba(140,115,85,0.2)`, paddingLeft: 12, lineHeight: 1.6 }}>
               "{task.description}"
@@ -549,6 +857,12 @@ const TaskCard = ({ task, onToggleComplete, onToggleSubtask, onDelete }) => {
               ))}
             </div>
           )}
+          <button onClick={() => setExpanded(false)}
+            style={{ alignSelf: "flex-start", background: "none", border: "none", cursor: "pointer", fontFamily: T.mono, fontSize: 8, textTransform: "uppercase", letterSpacing: "0.2em", color: "rgba(45,40,36,0.35)", transition: "color 0.2s", padding: 0 }}
+            onMouseEnter={e => e.currentTarget.style.color = T.brass}
+            onMouseLeave={e => e.currentTarget.style.color = "rgba(45,40,36,0.35)"}>
+            Close ↑
+          </button>
         </div>
       )}
     </div>
@@ -556,15 +870,16 @@ const TaskCard = ({ task, onToggleComplete, onToggleSubtask, onDelete }) => {
 };
 
 // ─────────────────────────────────────────────
-// TaskGroup
+// TaskGroup — with blur-others-on-expand logic
 // ─────────────────────────────────────────────
 const TaskGroup = ({ title, tasks, isCurrent, isPast, onToggleComplete, onToggleSubtask, onDelete }) => {
+  const [expandedId, setExpandedId] = useState(null);
   if (!tasks?.length) return null;
+
   return (
     <div style={{ paddingTop: 20, opacity: isPast ? 0.45 : 1, transition: "opacity 0.5s" }}
       onMouseEnter={e => { if (isPast) e.currentTarget.style.opacity = 1; }}
       onMouseLeave={e => { if (isPast) e.currentTarget.style.opacity = 0.45; }}>
-      <style>{`@keyframes co-pulse{0%,100%{opacity:1}50%{opacity:0.3}}`}</style>
       <div style={{ display: "flex", alignItems: "center", gap: 8, paddingBottom: 8 }}>
         <span style={{ fontFamily: T.mono, fontSize: 9, letterSpacing: "0.2em", textTransform: "uppercase", fontWeight: 500, color: isCurrent ? T.brass : "rgba(45,40,36,0.6)" }}>
           {title}
@@ -573,7 +888,15 @@ const TaskGroup = ({ title, tasks, isCurrent, isPast, onToggleComplete, onToggle
       </div>
       <div style={{ borderTop: `1px solid rgba(45,40,36,0.1)` }}>
         {tasks.map(t => (
-          <TaskCard key={t.id} task={t} onToggleComplete={onToggleComplete} onToggleSubtask={onToggleSubtask} onDelete={onDelete} />
+          <div key={t.id} onClick={() => setExpandedId(id => id === t.id ? null : t.id)}>
+            <TaskCard
+              task={t}
+              isBlurred={expandedId !== null && expandedId !== t.id}
+              onToggleComplete={onToggleComplete}
+              onToggleSubtask={onToggleSubtask}
+              onDelete={onDelete}
+            />
+          </div>
         ))}
       </div>
     </div>
@@ -587,9 +910,9 @@ const Desk = ({ tasks, ctx, onToggleComplete, onToggleSubtask, onDelete, onClear
   const [showConfig,   setShowConfig]   = useState(false);
   const [clearConfirm, setClearConfirm] = useState(false);
 
-  const tz          = ctx?.timezone || userTZ();
-  const today       = getLocalDateISO(tz);
-  const currentHour = new Date(new Date().toLocaleString("en-US", { timeZone: tz })).getHours();
+  const tz           = ctx?.timezone || userTZ();
+  const today        = getLocalDateISO(tz);
+  const currentHour  = new Date(new Date().toLocaleString("en-US", { timeZone: tz })).getHours();
   const currentBlock = currentHour >= 18 ? "Evening" : currentHour >= 12 ? "Afternoon" : "Morning";
 
   let active    = tasks.filter(t => t.status !== "completed");
@@ -600,8 +923,8 @@ const Desk = ({ tasks, ctx, onToggleComplete, onToggleSubtask, onDelete, onClear
 
   if (ctx?.focusMode && todayT.length > 3) {
     const score = t => t.urgency === "High" && t.importance === "High" ? 3 : (t.urgency === "High" || t.importance === "High" ? 2 : 1);
-    const hard = todayT.filter(t => t.has_hard_deadline);
-    const flex = todayT.filter(t => !t.has_hard_deadline);
+    const hard  = todayT.filter(t =>  t.has_hard_deadline);
+    const flex  = todayT.filter(t => !t.has_hard_deadline);
     if (hard.length > 3) {
       focusOverridden = true;
       todayT  = hard;
@@ -619,8 +942,10 @@ const Desk = ({ tasks, ctx, onToggleComplete, onToggleSubtask, onDelete, onClear
   const evening   = todayT.filter(t => t.time_of_day === "Evening");
   const unsorted  = todayT.filter(t => !["Morning","Afternoon","Evening"].includes(t.time_of_day));
 
+  const groupProps = { onToggleComplete, onToggleSubtask, onDelete };
+
   return (
-    <div style={{ width: "100%" }}>
+    <div className="co-fade" style={{ width: "100%" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", borderBottom: `1px solid rgba(45,40,36,0.1)`, paddingBottom: 24, marginBottom: 24, gap: 16, flexWrap: "wrap" }}>
         <div>
           <div style={{ fontFamily: T.serif, fontSize: 32, color: T.walnut }}>Your brief is ready.</div>
@@ -630,7 +955,9 @@ const Desk = ({ tasks, ctx, onToggleComplete, onToggleSubtask, onDelete, onClear
         </div>
         <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
           <button onClick={() => setShowConfig(x => !x)}
-            style={{ fontFamily: T.mono, fontSize: 9, textTransform: "uppercase", letterSpacing: "0.2em", border: `1px solid rgba(45,40,36,0.15)`, background: "none", padding: "8px 12px", cursor: "pointer", color: T.ink }}>
+            style={{ fontFamily: T.mono, fontSize: 9, textTransform: "uppercase", letterSpacing: "0.2em", border: `1px solid rgba(45,40,36,0.15)`, background: "none", padding: "8px 12px", cursor: "pointer", color: T.ink, transition: "all 0.25s" }}
+            onMouseEnter={e => e.currentTarget.style.borderColor = T.brass}
+            onMouseLeave={e => e.currentTarget.style.borderColor = "rgba(45,40,36,0.15)"}>
             ⚙ Workday Rules
           </button>
           {tasks.length > 0 && (
@@ -643,7 +970,7 @@ const Desk = ({ tasks, ctx, onToggleComplete, onToggleSubtask, onDelete, onClear
       </div>
 
       {showConfig && ctx && (
-        <div style={{ padding: 16, background: "rgba(45,40,36,0.04)", border: `1px solid rgba(45,40,36,0.1)`, fontFamily: T.mono, fontSize: 10, marginBottom: 24 }}>
+        <div className="co-slide" style={{ padding: 16, background: "rgba(45,40,36,0.04)", border: `1px solid rgba(45,40,36,0.1)`, fontFamily: T.mono, fontSize: 10, marginBottom: 24 }}>
           <div style={{ display: "flex", flexWrap: "wrap", gap: 20, marginBottom: 12, color: "rgba(45,40,36,0.8)" }}>
             <span>Hours: {ctx.dayStart} – {ctx.dayEnd}</span>
             <span>Focus: {ctx.peakStart} – {ctx.peakEnd}</span>
@@ -671,12 +998,12 @@ const Desk = ({ tasks, ctx, onToggleComplete, onToggleSubtask, onDelete, onClear
         </div>
       ) : (
         <div>
-          <TaskGroup title="This Morning"        tasks={morning}   isCurrent={currentBlock === "Morning"}   isPast={currentHour >= 12} onToggleComplete={onToggleComplete} onToggleSubtask={onToggleSubtask} onDelete={onDelete} />
-          <TaskGroup title="This Afternoon"      tasks={afternoon} isCurrent={currentBlock === "Afternoon"} isPast={currentHour >= 18} onToggleComplete={onToggleComplete} onToggleSubtask={onToggleSubtask} onDelete={onDelete} />
-          <TaskGroup title="Tonight"             tasks={evening}   isCurrent={currentBlock === "Evening"}   isPast={false}             onToggleComplete={onToggleComplete} onToggleSubtask={onToggleSubtask} onDelete={onDelete} />
-          <TaskGroup title="Active Briefs"       tasks={unsorted}  isCurrent={false}                        isPast={false}             onToggleComplete={onToggleComplete} onToggleSubtask={onToggleSubtask} onDelete={onDelete} />
-          {futureT.length  > 0 && <TaskGroup title="Upcoming / Deferred" tasks={futureT}   isCurrent={false} isPast={false} onToggleComplete={onToggleComplete} onToggleSubtask={onToggleSubtask} onDelete={onDelete} />}
-          {completed.length > 0 && <TaskGroup title="Filed"              tasks={completed} isCurrent={false} isPast={false} onToggleComplete={onToggleComplete} onToggleSubtask={onToggleSubtask} onDelete={onDelete} />}
+          <TaskGroup title="This Morning"        tasks={morning}   isCurrent={currentBlock === "Morning"}   isPast={currentHour >= 12} {...groupProps} />
+          <TaskGroup title="This Afternoon"      tasks={afternoon} isCurrent={currentBlock === "Afternoon"} isPast={currentHour >= 18} {...groupProps} />
+          <TaskGroup title="Tonight"             tasks={evening}   isCurrent={currentBlock === "Evening"}   isPast={false}             {...groupProps} />
+          <TaskGroup title="Active Briefs"       tasks={unsorted}  isCurrent={false}                        isPast={false}             {...groupProps} />
+          {futureT.length  > 0 && <TaskGroup title="Upcoming / Deferred" tasks={futureT}   isCurrent={false} isPast={false} {...groupProps} />}
+          {completed.length > 0 && <TaskGroup title="Filed"              tasks={completed} isCurrent={false} isPast={false} {...groupProps} />}
         </div>
       )}
 
@@ -702,7 +1029,7 @@ const Desk = ({ tasks, ctx, onToggleComplete, onToggleSubtask, onDelete, onClear
 };
 
 // ─────────────────────────────────────────────
-// AI Parser — calls /api/parse (Gemini via proxy)
+// AI Parser
 // ─────────────────────────────────────────────
 async function parseDump(text, ctx) {
   const tz     = ctx?.timezone || userTZ();
@@ -744,14 +1071,14 @@ Return a JSON array. Each object must have:
 }
 
 // ─────────────────────────────────────────────
-// Root App — wires auth + db + UI together
+// Root App
 // ─────────────────────────────────────────────
 export default function App() {
   const { user, loading: authLoading, signIn, signUp, signOut } = useAuth();
   const { tasks, addTasks, toggleComplete, toggleSubtask, deleteTask, clearAll } = useTasks(user?.id);
   const { schedule, loading: schedLoading, isFirstTime, saveSchedule, updateSchedule } = useSchedule(user?.id);
 
-  const [view,      setView]      = useState("lobby");
+  const [view,      setView]      = useState("landing");
   const [prevInput, setPrevInput] = useState("");
   const [apiError,  setApiError]  = useState(null);
   const [toastMsg,  setToastMsg]  = useState(null);
@@ -761,19 +1088,17 @@ export default function App() {
     setTimeout(() => setToastMsg(null), 3500);
   };
 
-  // Route user based on auth state
   useEffect(() => {
     if (authLoading) return;
     if (!user) {
-      setView("lobby");
+      // Keep landing/lobby visible — don't force back to landing if already on lobby
+      if (view !== "lobby") setView("landing");
       return;
     }
-    // User is logged in — wait for schedule to load
     if (schedLoading) return;
     if (isFirstTime) {
       setView("interview");
     } else {
-      // Returning user — go straight to desk if they have tasks, else dump
       setView(tasks.length > 0 ? "desk" : "dump");
     }
   }, [user, authLoading, schedLoading, isFirstTime]);
@@ -782,7 +1107,7 @@ export default function App() {
     toast("The office is locked. See you tomorrow.");
     setTimeout(async () => {
       await signOut();
-      setView("lobby");
+      setView("landing");
     }, 1500);
   };
 
@@ -804,40 +1129,28 @@ export default function App() {
 
   const handleToggleComplete = async (taskId) => {
     const task = tasks.find(t => t.id === taskId);
-    if (!task) return;
-    if (task.status !== "completed") toast("Noted. What's next?");
+    if (task && task.status !== "completed") toast("Noted. What's next?");
     await toggleComplete(taskId);
   };
 
   const handleToggleSubtask = async (taskId, subId) => {
     const task = tasks.find(t => t.id === taskId);
     if (!task) return;
-    const sub = task.subtasks.find(s => s.id === subId);
-    if (!sub) return;
-    const updatedSubs = task.subtasks.map(s => s.id === subId ? { ...s, status: s.status === "completed" ? "pending" : "completed" } : s);
+    const updatedSubs = task.subtasks.map(s =>
+      s.id === subId ? { ...s, status: s.status === "completed" ? "pending" : "completed" } : s
+    );
     if (updatedSubs.every(s => s.status === "completed")) toast("That file is closed.");
     await toggleSubtask(taskId, subId);
   };
 
-  const handleDelete = async (taskId) => {
-    await deleteTask(taskId);
-    toast("Cleared from the desk.");
-  };
+  const handleDelete    = async (id)  => { await deleteTask(id); toast("Cleared from the desk."); };
+  const handleClearAll  = async ()    => { await clearAll(); toast("Cleared from the desk."); };
+  const handleUpdateCtx = async (ctx) => { await updateSchedule(ctx); };
 
-  const handleClearAll = async () => {
-    await clearAll();
-    toast("Cleared from the desk.");
-  };
-
-  const handleUpdateCtx = async (newCtx) => {
-    await updateSchedule(newCtx);
-  };
-
-  // Full-screen loading while checking auth session
   if (authLoading) {
     return (
       <div style={{ minHeight: "100vh", background: T.paper, display: "flex", alignItems: "center", justifyContent: "center" }}>
-        <style>{`@keyframes co-spin{to{transform:rotate(360deg)}}`}</style>
+        <GlobalStyles />
         <div style={{ width: 24, height: 24, border: `1.5px solid rgba(140,115,85,0.3)`, borderTop: `1.5px solid ${T.brass}`, borderRadius: "50%", animation: "co-spin 1s linear infinite" }} />
       </div>
     );
@@ -845,41 +1158,61 @@ export default function App() {
 
   const activeCount = tasks.filter(t => t.status !== "completed").length;
 
+  // Landing and lobby don't use Shell nav
+  if (view === "landing") {
+    return (
+      <div style={{
+        minHeight: "100vh", background: T.paper, color: T.ink, fontFamily: T.mono,
+        display: "flex", flexDirection: "column", alignItems: "center", padding: "32px 24px",
+        backgroundImage: "radial-gradient(rgba(45,40,36,0.055) 1px, transparent 1px)",
+        backgroundSize: "24px 24px",
+      }}>
+        <GlobalStyles />
+        <div style={{ width: "100%", maxWidth: 720, flex: 1 }}>
+          <Landing onEnter={() => setView("lobby")} />
+        </div>
+        <footer style={{ width: "100%", maxWidth: 720, textAlign: "center", marginTop: 64, paddingTop: 20, borderTop: `1px solid rgba(45,40,36,0.05)`, fontSize: 9, letterSpacing: "0.25em", textTransform: "uppercase", color: "rgba(45,40,36,0.3)", userSelect: "none" }}>
+          The Corner Office · All Rights Reserved 2026
+        </footer>
+      </div>
+    );
+  }
+
+  if (view === "lobby") {
+    return (
+      <div style={{
+        minHeight: "100vh", background: T.paper, color: T.ink, fontFamily: T.mono,
+        display: "flex", flexDirection: "column", alignItems: "center", padding: "32px 24px",
+        backgroundImage: "radial-gradient(rgba(45,40,36,0.055) 1px, transparent 1px)",
+        backgroundSize: "24px 24px",
+      }}>
+        <GlobalStyles />
+        <div style={{ width: "100%", maxWidth: 720, flex: 1 }}>
+          <Lobby onSignIn={signIn} onSignUp={signUp} />
+        </div>
+        <footer style={{ width: "100%", maxWidth: 720, textAlign: "center", marginTop: 64, paddingTop: 20, borderTop: `1px solid rgba(45,40,36,0.05)`, fontSize: 9, letterSpacing: "0.25em", textTransform: "uppercase", color: "rgba(45,40,36,0.3)", userSelect: "none" }}>
+          The Corner Office · All Rights Reserved 2026
+        </footer>
+      </div>
+    );
+  }
+
   return (
-    <Shell view={view} setView={setView} taskCount={activeCount} toastMsg={toastMsg} onSignOut={handleSignOut}>
-      {view === "lobby" && (
-        <Lobby onSignIn={signIn} onSignUp={signUp} />
-      )}
+    <Shell view={view} setView={setView} taskCount={activeCount} toastMsg={toastMsg}
+      onSignOut={handleSignOut} tasks={tasks} schedule={schedule}>
       {view === "interview" && (
-        <Interview
-          initial={schedule}
-          onComplete={async (prefs) => {
-            await saveSchedule(prefs);
-            toast("Understood.");
-            setTimeout(() => setView("dump"), 1200);
-          }}
-        />
+        <Interview initial={schedule} onComplete={async (prefs) => {
+          await saveSchedule(prefs);
+          toast("Understood.");
+          setTimeout(() => setView("dump"), 1200);
+        }} />
       )}
-      {view === "dump" && (
-        <Dump
-          onSubmit={handleDumpSubmit}
-          prevInput={prevInput}
-          ctx={schedule}
-          apiError={apiError}
-          clearError={() => setApiError(null)}
-        />
-      )}
+      {view === "dump"    && <Dump onSubmit={handleDumpSubmit} prevInput={prevInput} ctx={schedule} apiError={apiError} clearError={() => setApiError(null)} />}
       {view === "loading" && <Loading />}
-      {view === "desk" && (
-        <Desk
-          tasks={tasks}
-          ctx={schedule}
-          onToggleComplete={handleToggleComplete}
-          onToggleSubtask={handleToggleSubtask}
-          onDelete={handleDelete}
-          onClearAll={handleClearAll}
-          onUpdateCtx={handleUpdateCtx}
-        />
+      {view === "desk"    && (
+        <Desk tasks={tasks} ctx={schedule}
+          onToggleComplete={handleToggleComplete} onToggleSubtask={handleToggleSubtask}
+          onDelete={handleDelete} onClearAll={handleClearAll} onUpdateCtx={handleUpdateCtx} />
       )}
     </Shell>
   );
