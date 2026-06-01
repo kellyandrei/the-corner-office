@@ -64,9 +64,12 @@ const formatDisplayDate = (isoDate, tz) => {
 
 const offsetDate = (iso, days) => {
   try {
-    const d = new Date(iso + "T00:00:00");
-    d.setDate(d.getDate() + days);
-    return d.toISOString().split("T")[0];
+    const [y, m, d] = iso.split("-").map(Number);
+    const date = new Date(Date.UTC(y, m - 1, d + days));
+    const yy = date.getUTCFullYear();
+    const mm = String(date.getUTCMonth() + 1).padStart(2, "0");
+    const dd = String(date.getUTCDate()).padStart(2, "0");
+    return `${yy}-${mm}-${dd}`;
   } catch { return iso; }
 };
 
@@ -172,7 +175,7 @@ const CalendarIcon = ({ size = 14, color = "currentColor" }) => (
 // ─────────────────────────────────────────────
 // Calendar Overlay
 // ─────────────────────────────────────────────
-const CalendarOverlay = ({ tasks, onClose, tz }) => {
+const CalendarOverlay = ({ tasks, onClose, tz, onSelectDate }) => {
   const userTimezone = tz || userTZ();
   const todayISO     = getLocalDateISO(userTimezone);
   const [tY, tM]     = todayISO.split("-").map(Number);
@@ -258,7 +261,11 @@ const CalendarOverlay = ({ tasks, onClose, tz }) => {
               const dots    = getDotsForDay(year, month, day);
               const isToday = day === parseInt(todayISO.split("-")[2]) && month === tM - 1 && year === tY;
               return (
-                <div key={day} style={{ padding: "6px 0", display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
+                <div key={day}
+                  onClick={() => { if (onSelectDate) { const iso = `${year}-${String(month+1).padStart(2,"0")}-${String(day).padStart(2,"0")}`; onSelectDate(iso); } }}
+                  style={{ padding: "6px 0", display: "flex", flexDirection: "column", alignItems: "center", gap: 2, cursor: onSelectDate ? "pointer" : "default", borderRadius: 4, transition: "background 0.2s" }}
+                  onMouseEnter={e => { if (onSelectDate) e.currentTarget.style.background = "rgba(140,115,85,0.08)"; }}
+                  onMouseLeave={e => { e.currentTarget.style.background = "none"; }}>
                   <span style={{ width: 22, height: 22, display: "flex", alignItems: "center", justifyContent: "center", border: isToday ? `1px solid ${T.ink}` : "none", color: dots.length > 0 ? T.brass : "rgba(45,40,36,0.55)", fontWeight: isToday ? 600 : 400 }}>{day}</span>
                   {dots.length > 0 && (
                     <div style={{ display: "flex", gap: 2 }}>
@@ -568,36 +575,263 @@ const Shell = ({ view, setView, taskCount, toastMsg, onSignOut, tasks, schedule,
 // ─────────────────────────────────────────────
 // Landing
 // ─────────────────────────────────────────────
-const Landing = ({ onEnter }) => (
-  <div className="co-fade" style={{ maxWidth: 680, margin: "auto", paddingTop: 32, paddingBottom: 64 }}>
-    <div style={{ textAlign: "center", paddingBottom: 64, borderBottom: `1px solid rgba(45,40,36,0.08)`, marginBottom: 64 }}>
-      <div style={{ fontFamily: T.serif, fontSize: 100, fontWeight: 300, letterSpacing: "0.15em", color: T.walnut, lineHeight: 1, marginBottom: 16 }}>C/O</div>
-      <p style={{ fontFamily: T.mono, fontSize: 9, letterSpacing: "0.4em", textTransform: "uppercase", color: T.brass, marginBottom: 32 }}>The Corner Office</p>
-      <div style={{ fontFamily: T.serif, fontSize: 28, color: T.ink, lineHeight: 1.4, maxWidth: 480, margin: "0 auto 16px", fontWeight: 400 }}>The desk where executives think clearly.</div>
-      <p style={{ fontFamily: T.serif, fontSize: 15, color: "rgba(45,40,36,0.6)", lineHeight: 1.7, maxWidth: 400, margin: "0 auto 40px", fontStyle: "italic" }}>
-        Dump everything on your mind. Your Chief of Staff sorts, schedules, and hands back a clean brief — one task at a time.
-      </p>
-      <Btn onClick={onEnter} style={{ fontSize: 11, letterSpacing: "0.3em", padding: "14px 36px" }}>Enter the Office</Btn>
-    </div>
-    <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 32, marginBottom: 64 }}>
-      {[
-        { icon: "📥", title: "The Dump",   body: "Write anything. Meeting notes, scattered thoughts, half-formed ideas. Nothing is too messy." },
-        { icon: "⚡", title: "AI Sorting", body: "Your Chief of Staff parses urgency, importance, and deadlines. You get a prioritized brief." },
-        { icon: "🗂", title: "The Desk",   body: "One cognitive load at a time. Morning, Afternoon, Evening — your day, structured." },
-      ].map(p => (
-        <div key={p.title} style={{ borderTop: `2px solid rgba(45,40,36,0.08)`, paddingTop: 20 }}>
-          <div style={{ fontSize: 20, marginBottom: 10 }}>{p.icon}</div>
-          <div style={{ fontFamily: T.serif, fontSize: 16, color: T.walnut, marginBottom: 8 }}>{p.title}</div>
-          <p style={{ fontFamily: T.serif, fontSize: 12, color: "rgba(45,40,36,0.6)", lineHeight: 1.7, fontStyle: "italic" }}>{p.body}</p>
+const Landing = ({ onEnter }) => {
+  const VIDEO_URL = "https://videos.pexels.com/video-files/31804129/13550134_1440_2560_30fps.mp4";
+
+  return (
+    <div style={{ width: "100%", minHeight: "100vh", position: "relative", overflow: "hidden" }}>
+      <GlobalStyles />
+
+      {/* ── Video hero background ── */}
+      <div style={{
+        position: "fixed", inset: 0, zIndex: 0,
+        background: "#1a1410", // fallback while video loads
+      }}>
+        <video
+          autoPlay muted loop playsInline
+          style={{
+            position: "absolute", inset: 0,
+            width: "100%", height: "100%",
+            objectFit: "cover", objectPosition: "center",
+            opacity: 0.45, // dim so text stays readable
+          }}
+        >
+          <source src={VIDEO_URL} type="video/mp4" />
+        </video>
+        {/* Multi-layer overlay for depth and brand toning */}
+        <div style={{
+          position: "absolute", inset: 0,
+          background: "linear-gradient(160deg, rgba(26,14,8,0.72) 0%, rgba(45,20,10,0.55) 40%, rgba(26,14,8,0.80) 100%)",
+        }} />
+        {/* Bottom fade to paper for smooth section transition */}
+        <div style={{
+          position: "absolute", bottom: 0, left: 0, right: 0, height: "35vh",
+          background: "linear-gradient(to bottom, transparent, rgba(26,14,8,0.95))",
+        }} />
+      </div>
+
+      {/* ── Hero section ── */}
+      <div style={{
+        position: "relative", zIndex: 1,
+        minHeight: "100vh",
+        display: "flex", flexDirection: "column",
+        alignItems: "center", justifyContent: "center",
+        padding: "80px 32px 120px",
+        textAlign: "center",
+      }}>
+        {/* Top nav bar */}
+        <div style={{
+          position: "absolute", top: 0, left: 0, right: 0,
+          padding: "28px 48px",
+          display: "flex", justifyContent: "space-between", alignItems: "center",
+          borderBottom: "1px solid rgba(244,241,234,0.08)",
+        }}>
+          <span style={{
+            fontFamily: "'EB Garamond', Georgia, serif",
+            fontSize: 15, fontWeight: 600, letterSpacing: "0.2em",
+            border: "1px solid rgba(244,241,234,0.25)", padding: "4px 10px",
+            color: "#F4F1EA",
+          }}>C/O</span>
+          <button onClick={onEnter}
+            style={{
+              fontFamily: "'IBM Plex Mono', monospace",
+              fontSize: 9, letterSpacing: "0.25em", textTransform: "uppercase",
+              background: "transparent", border: "1px solid rgba(244,241,234,0.3)",
+              color: "rgba(244,241,234,0.75)", padding: "8px 18px", cursor: "pointer",
+              transition: "all 0.35s",
+            }}
+            onMouseEnter={e => { e.currentTarget.style.borderColor = "#8C7355"; e.currentTarget.style.color = "#8C7355"; }}
+            onMouseLeave={e => { e.currentTarget.style.borderColor = "rgba(244,241,234,0.3)"; e.currentTarget.style.color = "rgba(244,241,234,0.75)"; }}>
+            Sign In
+          </button>
         </div>
-      ))}
+
+        {/* Hero copy */}
+        <div className="co-fade" style={{ maxWidth: 640 }}>
+          {/* Eyebrow */}
+          <p style={{
+            fontFamily: "'IBM Plex Mono', monospace",
+            fontSize: 9, letterSpacing: "0.45em", textTransform: "uppercase",
+            color: "#8C7355", marginBottom: 28,
+          }}>Executive Productivity · AI-Powered</p>
+
+          {/* Wordmark */}
+          <div style={{
+            fontFamily: "'EB Garamond', Georgia, serif",
+            fontSize: "clamp(72px, 12vw, 120px)",
+            fontWeight: 300, letterSpacing: "0.12em",
+            color: "#F4F1EA", lineHeight: 1, marginBottom: 8,
+          }}>C/O</div>
+
+          <div style={{
+            fontFamily: "'IBM Plex Mono', monospace",
+            fontSize: 9, letterSpacing: "0.5em", textTransform: "uppercase",
+            color: "rgba(244,241,234,0.45)", marginBottom: 48,
+          }}>The Corner Office</div>
+
+          {/* Hero headline */}
+          <div style={{
+            fontFamily: "'EB Garamond', Georgia, serif",
+            fontSize: "clamp(22px, 3.5vw, 34px)",
+            fontWeight: 400, color: "#F4F1EA",
+            lineHeight: 1.35, marginBottom: 20,
+            letterSpacing: "-0.01em",
+          }}>
+            The desk where executives<br />think without distraction.
+          </div>
+
+          {/* Subheadline */}
+          <p style={{
+            fontFamily: "'EB Garamond', Georgia, serif",
+            fontSize: 17, color: "rgba(244,241,234,0.55)",
+            lineHeight: 1.75, marginBottom: 56,
+            fontStyle: "italic", maxWidth: 480, margin: "0 auto 56px",
+          }}>
+            Dump everything on your mind. Your Chief of Staff sorts, schedules, and hands back a clean brief — one task at a time.
+          </p>
+
+          {/* CTA */}
+          <div style={{ display: "flex", gap: 12, justifyContent: "center", alignItems: "center", flexWrap: "wrap" }}>
+            <button onClick={onEnter}
+              style={{
+                fontFamily: "'IBM Plex Mono', monospace",
+                fontSize: 10, letterSpacing: "0.25em", textTransform: "uppercase",
+                background: "#8C7355", border: "1px solid #8C7355",
+                color: "#F4F1EA", padding: "14px 36px", cursor: "pointer",
+                transition: "all 0.35s",
+              }}
+              onMouseEnter={e => { e.currentTarget.style.background = "#F4F1EA"; e.currentTarget.style.color = "#2D2824"; e.currentTarget.style.borderColor = "#F4F1EA"; }}
+              onMouseLeave={e => { e.currentTarget.style.background = "#8C7355"; e.currentTarget.style.color = "#F4F1EA"; e.currentTarget.style.borderColor = "#8C7355"; }}>
+              Enter the Office
+            </button>
+            <span style={{
+              fontFamily: "'IBM Plex Mono', monospace",
+              fontSize: 8, letterSpacing: "0.2em", textTransform: "uppercase",
+              color: "rgba(244,241,234,0.3)",
+            }}>Free · No credit card</span>
+          </div>
+        </div>
+
+        {/* Scroll indicator */}
+        <div style={{
+          position: "absolute", bottom: 40, left: "50%", transform: "translateX(-50%)",
+          display: "flex", flexDirection: "column", alignItems: "center", gap: 6,
+        }}>
+          <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 7, letterSpacing: "0.3em", textTransform: "uppercase", color: "rgba(244,241,234,0.25)" }}>Scroll</span>
+          <div style={{ width: 1, height: 32, background: "linear-gradient(to bottom, rgba(244,241,234,0.25), transparent)" }} />
+        </div>
+      </div>
+
+      {/* ── Features section — paper tone ── */}
+      <div style={{
+        position: "relative", zIndex: 1,
+        background: "#F4F1EA",
+        padding: "96px 32px",
+      }}>
+        <div style={{ maxWidth: 720, margin: "0 auto" }}>
+          {/* Section label */}
+          <div style={{ textAlign: "center", marginBottom: 64 }}>
+            <p style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 9, letterSpacing: "0.35em", textTransform: "uppercase", color: "#8C7355", marginBottom: 16 }}>
+              How it works
+            </p>
+            <div style={{
+              fontFamily: "'EB Garamond', Georgia, serif",
+              fontSize: "clamp(24px, 3vw, 36px)", color: "#3E2723",
+              fontWeight: 400, lineHeight: 1.3,
+            }}>
+              From chaos to clarity<br />in three quiet steps.
+            </div>
+          </div>
+
+          {/* Three pillars */}
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 40, marginBottom: 80 }}>
+            {[
+              { num: "01", title: "The Dump",   body: "Write anything. Meeting notes, scattered thoughts, half-formed ideas. Nothing is too messy for the inbox." },
+              { num: "02", title: "AI Sorting", body: "Your Chief of Staff parses urgency, importance, and deadlines. You receive a structured, prioritized brief." },
+              { num: "03", title: "The Desk",   body: "One cognitive load at a time. Morning, Afternoon, Evening — your day laid out with precision." },
+            ].map(p => (
+              <div key={p.num} style={{ paddingTop: 24, borderTop: `1px solid rgba(45,40,36,0.12)` }}>
+                <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 9, letterSpacing: "0.3em", color: "#8C7355", marginBottom: 16 }}>{p.num}</div>
+                <div style={{ fontFamily: "'EB Garamond', Georgia, serif", fontSize: 20, color: "#3E2723", marginBottom: 12, fontWeight: 500 }}>{p.title}</div>
+                <p style={{ fontFamily: "'EB Garamond', Georgia, serif", fontSize: 13, color: "rgba(45,40,36,0.6)", lineHeight: 1.75, fontStyle: "italic" }}>{p.body}</p>
+              </div>
+            ))}
+          </div>
+
+          {/* Divider quote */}
+          <div style={{
+            textAlign: "center",
+            padding: "56px 32px",
+            background: "#3E2723",
+            marginBottom: 80,
+          }}>
+            <p style={{
+              fontFamily: "'EB Garamond', Georgia, serif",
+              fontSize: "clamp(18px, 2.5vw, 26px)",
+              color: "#F4F1EA", fontStyle: "italic", lineHeight: 1.5,
+              marginBottom: 16,
+            }}>
+              "The desk is clear. Enjoy it while it lasts."
+            </p>
+            <p style={{
+              fontFamily: "'IBM Plex Mono', monospace",
+              fontSize: 8, letterSpacing: "0.3em", textTransform: "uppercase",
+              color: "#8C7355",
+            }}>— Your Chief of Staff</p>
+          </div>
+
+          {/* Features grid */}
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 2, marginBottom: 80 }}>
+            {[
+              { icon: "⚡", label: "Executive Three",     desc: "Focus Mode limits today to 3 balanced priorities. Deadlines are never deferred." },
+              { icon: "📅", label: "Calendar Ledger",     desc: "Month and year views with ambient priority dots. Timezone-aware, always accurate." },
+              { icon: "✏️", label: "Editable Briefs",     desc: "Reschedule, reprioritize, or rename any task at any time. The desk adapts to you." },
+              { icon: "🔐", label: "Secure by Default",   desc: "Each desk is private. Row-level security ensures your briefs stay yours alone." },
+            ].map(f => (
+              <div key={f.label} style={{
+                padding: "28px 24px",
+                background: "rgba(45,40,36,0.03)",
+                border: "1px solid rgba(45,40,36,0.07)",
+              }}>
+                <div style={{ fontSize: 18, marginBottom: 10 }}>{f.icon}</div>
+                <div style={{ fontFamily: "'EB Garamond', Georgia, serif", fontSize: 16, color: "#3E2723", marginBottom: 6, fontWeight: 500 }}>{f.label}</div>
+                <p style={{ fontFamily: "'EB Garamond', Georgia, serif", fontSize: 12, color: "rgba(45,40,36,0.55)", lineHeight: 1.7, fontStyle: "italic" }}>{f.desc}</p>
+              </div>
+            ))}
+          </div>
+
+          {/* Final CTA */}
+          <div style={{ textAlign: "center", paddingTop: 16 }}>
+            <p style={{ fontFamily: "'EB Garamond', Georgia, serif", fontSize: 15, color: "rgba(45,40,36,0.5)", fontStyle: "italic", marginBottom: 28 }}>
+              No setup. No subscriptions. Just a clear desk.
+            </p>
+            <button onClick={onEnter}
+              style={{
+                fontFamily: "'IBM Plex Mono', monospace",
+                fontSize: 10, letterSpacing: "0.25em", textTransform: "uppercase",
+                background: "#2D2824", border: "1px solid #2D2824",
+                color: "#F4F1EA", padding: "14px 40px", cursor: "pointer",
+                transition: "all 0.35s",
+              }}
+              onMouseEnter={e => { e.currentTarget.style.background = "#8C7355"; e.currentTarget.style.borderColor = "#8C7355"; }}
+              onMouseLeave={e => { e.currentTarget.style.background = "#2D2824"; e.currentTarget.style.borderColor = "#2D2824"; }}>
+              Open Your Desk
+            </button>
+            <p style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 8, letterSpacing: "0.2em", textTransform: "uppercase", color: "rgba(45,40,36,0.3)", marginTop: 16 }}>
+              Free · Powered by AI · Confidentially Guarded
+            </p>
+          </div>
+
+          {/* Footer */}
+          <div style={{ textAlign: "center", paddingTop: 48, marginTop: 48, borderTop: "1px solid rgba(45,40,36,0.08)", fontSize: 9, letterSpacing: "0.25em", textTransform: "uppercase", color: "rgba(45,40,36,0.3)", fontFamily: "'IBM Plex Mono', monospace", userSelect: "none" }}>
+            The Corner Office · All Rights Reserved 2026
+          </div>
+        </div>
+      </div>
     </div>
-    <div style={{ textAlign: "center", padding: "32px 0", borderTop: `1px solid rgba(45,40,36,0.08)` }}>
-      <p style={{ fontFamily: T.serif, fontSize: 18, color: "rgba(45,40,36,0.45)", fontStyle: "italic" }}>"The desk is clear. Enjoy it while it lasts."</p>
-      <p style={{ fontFamily: T.mono, fontSize: 9, textTransform: "uppercase", letterSpacing: "0.2em", color: "rgba(45,40,36,0.3)", marginTop: 8 }}>— Your Chief of Staff</p>
-    </div>
-  </div>
-);
+  );
+};
+
 
 // ─────────────────────────────────────────────
 // Lobby
@@ -965,8 +1199,9 @@ const TaskGroup = ({ title, tasks, isCurrent, isPast, onToggleComplete, onToggle
 // ─────────────────────────────────────────────
 // Desk
 // ─────────────────────────────────────────────
-const Desk = ({ tasks, ctx, onToggleComplete, onToggleSubtask, onDelete, onClearAll, onUpdateCtx, onEditTask, onUpdateSchedule }) => {
+const Desk = ({ tasks, ctx, onToggleComplete, onToggleSubtask, onDelete, onClearAll, onClearFiled, onUpdateCtx, onEditTask, onUpdateSchedule, onNavigateToDate, viewDate, setViewDate }) => {
   const [clearConfirm,    setClearConfirm]    = useState(false);
+  const [clearFiledConfirm, setClearFiledConfirm] = useState(false);
   const [editingTask,     setEditingTask]     = useState(null);
   const [showWorkdayEdit, setShowWorkdayEdit] = useState(false);
   const [showCalendar,    setShowCalendar]    = useState(false);
@@ -975,20 +1210,20 @@ const Desk = ({ tasks, ctx, onToggleComplete, onToggleSubtask, onDelete, onClear
   const today        = getLocalDateISO(tz);
   const currentHour  = new Date(new Date().toLocaleString("en-US", { timeZone: tz })).getHours();
   const currentBlock = currentHour >= 18 ? "Evening" : currentHour >= 12 ? "Afternoon" : "Morning";
-
-  // Day navigation state — starts at today
-  const [viewDate, setViewDate] = useState(today);
-  const isToday = viewDate === today;
+  // viewDate comes from parent (App) so it persists across re-renders
+  // Fall back to today if not yet set
+  const effectiveViewDate = viewDate || today;
+  const isToday           = effectiveViewDate === today;
 
   let active    = tasks.filter(t => t.status !== "completed");
   let completed = tasks.filter(t => t.status === "completed");
 
   // Filter to selected viewDate
-  let viewTasks  = active.filter(t => t.scheduled_date === viewDate);
-  let futureTasks = active.filter(t => t.scheduled_date !== viewDate);
+  let viewTasks   = active.filter(t => t.scheduled_date === effectiveViewDate);
+  let futureTasks = active.filter(t => t.scheduled_date !== effectiveViewDate);
   let focusOverridden = false;
 
-  // Only apply Focus Mode partitioning on today's view
+  // Only apply Focus Mode on today's view
   if (isToday && ctx?.focusMode && viewTasks.length > 3) {
     const score = t => t.urgency === "High" && t.importance === "High" ? 3 : (t.urgency === "High" || t.importance === "High" ? 2 : 1);
     const hard  = viewTasks.filter(t =>  t.has_hard_deadline);
@@ -1014,9 +1249,15 @@ const Desk = ({ tasks, ctx, onToggleComplete, onToggleSubtask, onDelete, onClear
 
   const navBtnStyle = {
     background: "none", border: `1px solid rgba(45,40,36,0.15)`, cursor: "pointer",
-    color: "rgba(45,40,36,0.6)", padding: "6px 10px", fontFamily: T.mono, fontSize: 12,
+    color: "rgba(45,40,36,0.6)", padding: "6px 12px", fontFamily: T.mono, fontSize: 14,
     transition: "all 0.25s", lineHeight: 1,
   };
+
+  // Pending count text
+  const pendingCount = viewTasks.length;
+  const pendingText  = pendingCount > 0
+    ? `${pendingCount} pending item${pendingCount !== 1 ? "s" : ""} on the desk ${isToday ? "today" : "this day"}`
+    : isToday ? "No tasks scheduled for today." : "Nothing scheduled for this day.";
 
   return (
     <div className="co-fade" style={{ width: "100%" }}>
@@ -1026,24 +1267,31 @@ const Desk = ({ tasks, ctx, onToggleComplete, onToggleSubtask, onDelete, onClear
           <div style={{ fontFamily: T.serif, fontSize: 32, color: T.walnut }}>Your desk is ready.</div>
 
           {/* Day navigator */}
-          <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 8 }}>
-            <button style={navBtnStyle} onClick={() => setViewDate(d => offsetDate(d, -1))}
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 10 }}>
+            <button
+              style={navBtnStyle}
+              onClick={() => setViewDate(prev => offsetDate(prev || today, -1))}
               onMouseEnter={e => { e.currentTarget.style.borderColor = T.brass; e.currentTarget.style.color = T.brass; }}
               onMouseLeave={e => { e.currentTarget.style.borderColor = "rgba(45,40,36,0.15)"; e.currentTarget.style.color = "rgba(45,40,36,0.6)"; }}>
               ‹
             </button>
-            <div style={{ textAlign: "center" }}>
-              <p style={{ fontFamily: T.mono, fontSize: 9, letterSpacing: "0.2em", textTransform: "uppercase", color: isToday ? T.brass : "rgba(45,40,36,0.6)" }}>
-                {isToday ? "Today" : formatDisplayDate(viewDate, tz)}
+            <div style={{ textAlign: "center", minWidth: 180 }}>
+              <p style={{ fontFamily: T.mono, fontSize: 9, letterSpacing: "0.2em", textTransform: "uppercase", color: isToday ? T.brass : "rgba(45,40,36,0.7)", marginBottom: 2 }}>
+                {isToday ? `Today — ${formatDisplayDate(effectiveViewDate, tz)}` : formatDisplayDate(effectiveViewDate, tz)}
+              </p>
+              <p style={{ fontFamily: T.mono, fontSize: 9, letterSpacing: "0.15em", color: "rgba(45,40,36,0.5)" }}>
+                {pendingText}
               </p>
               {!isToday && (
                 <button onClick={() => setViewDate(today)}
-                  style={{ fontFamily: T.mono, fontSize: 8, textTransform: "uppercase", letterSpacing: "0.15em", background: "none", border: "none", cursor: "pointer", color: T.brass, textDecoration: "underline", textUnderlineOffset: 2 }}>
+                  style={{ fontFamily: T.mono, fontSize: 8, textTransform: "uppercase", letterSpacing: "0.15em", background: "none", border: "none", cursor: "pointer", color: T.brass, textDecoration: "underline", textUnderlineOffset: 2, marginTop: 2 }}>
                   Back to today
                 </button>
               )}
             </div>
-            <button style={navBtnStyle} onClick={() => setViewDate(d => offsetDate(d, 1))}
+            <button
+              style={navBtnStyle}
+              onClick={() => setViewDate(prev => offsetDate(prev || today, 1))}
               onMouseEnter={e => { e.currentTarget.style.borderColor = T.brass; e.currentTarget.style.color = T.brass; }}
               onMouseLeave={e => { e.currentTarget.style.borderColor = "rgba(45,40,36,0.15)"; e.currentTarget.style.color = "rgba(45,40,36,0.6)"; }}>
               ›
@@ -1053,7 +1301,7 @@ const Desk = ({ tasks, ctx, onToggleComplete, onToggleSubtask, onDelete, onClear
 
         {/* Action buttons */}
         <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-          {/* Calendar button — beside Workday Rules */}
+          {/* Calendar icon — beside Workday Rules */}
           <button onClick={() => setShowCalendar(true)} title="Desk Calendar"
             style={{ background: "none", border: `1px solid rgba(45,40,36,0.15)`, cursor: "pointer", color: "rgba(45,40,36,0.6)", padding: "7px 9px", display: "flex", alignItems: "center", transition: "all 0.25s" }}
             onMouseEnter={e => { e.currentTarget.style.color = T.brass; e.currentTarget.style.borderColor = T.brass; }}
@@ -1061,7 +1309,7 @@ const Desk = ({ tasks, ctx, onToggleComplete, onToggleSubtask, onDelete, onClear
             <CalendarIcon size={14} />
           </button>
 
-          {/* Workday Rules button */}
+          {/* Workday Rules */}
           <button onClick={() => setShowWorkdayEdit(true)}
             style={{ fontFamily: T.mono, fontSize: 9, textTransform: "uppercase", letterSpacing: "0.2em", border: `1px solid rgba(45,40,36,0.15)`, background: "none", padding: "8px 12px", cursor: "pointer", color: T.ink, transition: "all 0.25s" }}
             onMouseEnter={e => e.currentTarget.style.borderColor = T.brass}
@@ -1069,24 +1317,27 @@ const Desk = ({ tasks, ctx, onToggleComplete, onToggleSubtask, onDelete, onClear
             ⚙ Workday Rules
           </button>
 
-          {tasks.length > 0 && (
+          {/* Clear current day's tasks only */}
+          {viewTasks.length > 0 && (
             <button onClick={() => setClearConfirm(true)}
               style={{ fontFamily: T.mono, fontSize: 9, textTransform: "uppercase", letterSpacing: "0.2em", background: "none", border: "none", color: "#7a2020", cursor: "pointer", padding: "8px 12px" }}>
-              Clear Desk
+              Clear Day
             </button>
           )}
         </div>
       </div>
 
-      {/* Task groups */}
-      {viewTasks.length === 0 && completed.length === 0 && active.length === 0 ? (
-        <div style={{ textAlign: "center", padding: "64px 32px", background: "rgba(45,40,36,0.03)", border: `1px dashed rgba(45,40,36,0.1)` }}>
-          <p style={{ fontFamily: T.serif, fontSize: 20, color: "rgba(45,40,36,0.5)", fontStyle: "italic", marginBottom: 10 }}>"The desk is clear."</p>
-          <p style={{ fontFamily: T.mono, fontSize: 9, letterSpacing: "0.25em", textTransform: "uppercase", color: "rgba(45,40,36,0.35)" }}>Enjoy it while it lasts.</p>
-        </div>
-      ) : viewTasks.length === 0 ? (
-        <div style={{ textAlign: "center", padding: "48px 32px", background: "rgba(45,40,36,0.02)", border: `1px dashed rgba(45,40,36,0.08)` }}>
-          <p style={{ fontFamily: T.serif, fontSize: 18, color: "rgba(45,40,36,0.45)", fontStyle: "italic" }}>Nothing scheduled for this day.</p>
+      {/* Task groups for selected day */}
+      {viewTasks.length === 0 ? (
+        <div style={{ textAlign: "center", padding: "48px 32px", background: "rgba(45,40,36,0.02)", border: `1px dashed rgba(45,40,36,0.08)`, marginBottom: 24 }}>
+          <p style={{ fontFamily: T.serif, fontSize: 18, color: "rgba(45,40,36,0.45)", fontStyle: "italic", marginBottom: 8 }}>
+            {isToday ? '"The desk is clear."' : "Nothing scheduled for this day."}
+          </p>
+          {isToday && (
+            <p style={{ fontFamily: T.mono, fontSize: 9, letterSpacing: "0.25em", textTransform: "uppercase", color: "rgba(45,40,36,0.35)" }}>
+              Enjoy it while it lasts.
+            </p>
+          )}
         </div>
       ) : (
         <div>
@@ -1097,62 +1348,99 @@ const Desk = ({ tasks, ctx, onToggleComplete, onToggleSubtask, onDelete, onClear
         </div>
       )}
 
-      {/* Upcoming / Deferred — only show when Focus Mode is OFF */}
+      {/* Upcoming / Deferred — only when Focus Mode OFF */}
       {!ctx?.focusMode && futureTasks.length > 0 && (
         <TaskGroup title="Upcoming / Deferred" tasks={futureTasks} isCurrent={false} isPast={false} {...groupProps} />
       )}
 
-      {/* Filed (completed) */}
+      {/* Filed (completed) with its own Clear button */}
       {completed.length > 0 && (
-        <TaskGroup title="Filed" tasks={completed} isCurrent={false} isPast={false} {...groupProps} />
+        <div style={{ marginTop: 24 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", paddingBottom: 4 }}>
+            <span style={{ fontFamily: T.mono, fontSize: 9, letterSpacing: "0.2em", textTransform: "uppercase", color: "rgba(45,40,36,0.5)", fontWeight: 500 }}>
+              Filed ({completed.length})
+            </span>
+            <button onClick={() => setClearFiledConfirm(true)}
+              style={{ fontFamily: T.mono, fontSize: 8, textTransform: "uppercase", letterSpacing: "0.15em", background: "none", border: "none", color: "rgba(45,40,36,0.4)", cursor: "pointer", textDecoration: "underline", textUnderlineOffset: 2, transition: "color 0.2s" }}
+              onMouseEnter={e => e.currentTarget.style.color = "#7a2020"}
+              onMouseLeave={e => e.currentTarget.style.color = "rgba(45,40,36,0.4)"}>
+              Clear filed
+            </button>
+          </div>
+          <div style={{ borderTop: `1px solid rgba(45,40,36,0.1)` }}>
+            {completed.map(t => (
+              <TaskCard key={t.id} task={t} isBlurred={false} isExpanded={false}
+                onToggleExpand={() => {}}
+                onToggleComplete={onToggleComplete}
+                onToggleSubtask={onToggleSubtask}
+                onDelete={onDelete}
+                onEdit={setEditingTask}
+              />
+            ))}
+          </div>
+        </div>
       )}
 
-      {/* Modals */}
+      {/* Clear Day confirm */}
       {clearConfirm && (
         <Modal onClose={() => setClearConfirm(false)}>
           <div style={{ textAlign: "center" }}>
-            <div style={{ fontFamily: T.serif, fontSize: 22, marginBottom: 12 }}>Are you certain?</div>
+            <div style={{ fontFamily: T.serif, fontSize: 22, marginBottom: 12 }}>Clear this day?</div>
             <p style={{ fontFamily: T.serif, fontSize: 13, color: "rgba(45,40,36,0.7)", lineHeight: 1.6, marginBottom: 24 }}>
-              This will sweep everything off the desk. Any parsed items will be cleared completely.
+              This will remove all tasks scheduled for <strong>{isToday ? "today" : formatDisplayDate(effectiveViewDate, tz)}</strong>. Tasks on other days are untouched.
             </p>
-            <Btn onClick={() => { setClearConfirm(false); onClearAll(); }} style={{ width: "100%", justifyContent: "center", marginBottom: 10, background: T.brass, borderColor: T.brass }}>Clear it.</Btn>
+            <Btn onClick={() => { setClearConfirm(false); onClearAll(effectiveViewDate); }}
+              style={{ width: "100%", justifyContent: "center", marginBottom: 10, background: T.brass, borderColor: T.brass }}>
+              Clear it.
+            </Btn>
             <Btn variant="secondary" onClick={() => setClearConfirm(false)} style={{ width: "100%", justifyContent: "center" }}>Keep the files.</Btn>
           </div>
         </Modal>
       )}
 
+      {/* Clear Filed confirm */}
+      {clearFiledConfirm && (
+        <Modal onClose={() => setClearFiledConfirm(false)}>
+          <div style={{ textAlign: "center" }}>
+            <div style={{ fontFamily: T.serif, fontSize: 22, marginBottom: 12 }}>Clear all filed tasks?</div>
+            <p style={{ fontFamily: T.serif, fontSize: 13, color: "rgba(45,40,36,0.7)", lineHeight: 1.6, marginBottom: 24 }}>
+              This will permanently remove all completed tasks from the desk.
+            </p>
+            <Btn onClick={() => { setClearFiledConfirm(false); onClearFiled(); }}
+              style={{ width: "100%", justifyContent: "center", marginBottom: 10, background: T.brass, borderColor: T.brass }}>
+              Clear filed.
+            </Btn>
+            <Btn variant="secondary" onClick={() => setClearFiledConfirm(false)} style={{ width: "100%", justifyContent: "center" }}>Keep them.</Btn>
+          </div>
+        </Modal>
+      )}
+
+      {/* Task edit modal */}
       {editingTask && (
-        <TaskEditModal
-          task={editingTask}
-          onClose={() => setEditingTask(null)}
-          onSave={async (updates) => {
-            await onEditTask(editingTask.id, updates);
-            setEditingTask(null);
-          }}
-        />
+        <TaskEditModal task={editingTask} onClose={() => setEditingTask(null)}
+          onSave={async (updates) => { await onEditTask(editingTask.id, updates); setEditingTask(null); }} />
       )}
 
+      {/* Workday Rules edit modal */}
       {showWorkdayEdit && ctx && (
-        <WorkdayEditModal
-          current={ctx}
-          onClose={() => setShowWorkdayEdit(false)}
-          onSave={async (prefs) => {
-            await onUpdateSchedule(prefs);
-            setShowWorkdayEdit(false);
-          }}
-        />
+        <WorkdayEditModal current={ctx} onClose={() => setShowWorkdayEdit(false)}
+          onSave={async (prefs) => { await onUpdateSchedule(prefs); setShowWorkdayEdit(false); }} />
       )}
 
+      {/* Calendar overlay — clicking a day navigates desk to that date */}
       {showCalendar && (
-        <CalendarOverlay tasks={tasks} onClose={() => setShowCalendar(false)} tz={ctx?.timezone} />
+        <CalendarOverlay
+          tasks={tasks}
+          onClose={() => setShowCalendar(false)}
+          tz={ctx?.timezone}
+          onSelectDate={(iso) => { setViewDate(iso); setShowCalendar(false); }}
+        />
       )}
     </div>
   );
 };
 
-// ─────────────────────────────────────────────
-// AI Parser
-// ─────────────────────────────────────────────
+
 async function parseDump(text, ctx) {
   const tz     = ctx?.timezone || userTZ();
   const today  = getLocalDateISO(tz);
@@ -1203,10 +1491,11 @@ export default function App() {
   const { tasks, addTasks, editTask, toggleComplete, toggleSubtask, deleteTask, clearAll } = useTasks(user?.id);
   const { schedule, loading: schedLoading, isFirstTime, saveSchedule, updateSchedule } = useSchedule(user?.id);
 
-  const [view,      setView]      = useState("landing");
-  const [prevInput, setPrevInput] = useState("");
-  const [apiError,  setApiError]  = useState(null);
-  const [toastMsg,  setToastMsg]  = useState(null);
+  const [view,         setView]         = useState("landing");
+  const [prevInput,    setPrevInput]    = useState("");
+  const [apiError,     setApiError]     = useState(null);
+  const [toastMsg,     setToastMsg]     = useState(null);
+  const [deskViewDate, setDeskViewDate] = useState(null); // null = use today
 
   const toast = (msg) => { setToastMsg(msg); setTimeout(() => setToastMsg(null), 3500); };
 
@@ -1217,6 +1506,23 @@ export default function App() {
     if (isFirstTime) { setView("interview"); }
     else             { setView(tasks.length > 0 ? "desk" : "dump"); }
   }, [user, authLoading, schedLoading, isFirstTime]);
+
+  // Resolve the actual today string for the current schedule timezone
+  const resolvedToday = () => getLocalDateISO(schedule?.timezone || userTZ());
+
+  // Clear only tasks on a specific day
+  const handleClearDay = async (dateISO) => {
+    const dayTasks = tasks.filter(t => t.scheduled_date === dateISO && t.status !== "completed");
+    for (const t of dayTasks) await deleteTask(t.id);
+    toast("Day cleared from the desk.");
+  };
+
+  // Clear all completed/filed tasks
+  const handleClearFiled = async () => {
+    const filed = tasks.filter(t => t.status === "completed");
+    for (const t of filed) await deleteTask(t.id);
+    toast("Filed tasks cleared.");
+  };
 
   const handleSignOut = async () => {
     toast("The office is locked. See you tomorrow.");
@@ -1287,10 +1593,10 @@ export default function App() {
 
   if (view === "landing") {
     return (
-      <div style={barePageStyle}>
+      <div style={{ minHeight: "100vh", background: "#1a1410" }}>
         <GlobalStyles />
-        <div style={{ width: "100%", maxWidth: 720, flex: 1 }}><Landing onEnter={() => setView("lobby")} /></div>
-        {bareFooter}
+        <Landing onEnter={() => setView("lobby")} />
+        {/* Footer rendered inside Landing for full design control */}
         <Toast msg={toastMsg} />
       </div>
     );
@@ -1324,10 +1630,13 @@ export default function App() {
           onToggleComplete={handleToggleComplete}
           onToggleSubtask={handleToggleSubtask}
           onDelete={handleDelete}
-          onClearAll={handleClearAll}
+          onClearAll={handleClearDay}
+          onClearFiled={handleClearFiled}
           onUpdateCtx={handleUpdateCtx}
           onEditTask={handleEditTask}
           onUpdateSchedule={handleUpdateCtx}
+          viewDate={deskViewDate}
+          setViewDate={setDeskViewDate}
         />
       )}
     </Shell>
