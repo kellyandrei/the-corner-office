@@ -1,6 +1,6 @@
 // src/hooks/useTasks.js
 // All database operations for tasks and subtasks.
-// Tasks are scoped to the authenticated user via RLS (Row Level Security).
+// Tasks are scoped to the authenticated user via RLS.
 
 import { useState, useEffect, useCallback } from "react";
 import { supabase } from "../lib/supabase";
@@ -9,31 +9,25 @@ export function useTasks(userId) {
   const [tasks,   setTasks]   = useState([]);
   const [loading, setLoading] = useState(false);
 
-  // ── Fetch all tasks (with nested subtasks) for this user ──────────────────
   const fetchTasks = useCallback(async () => {
     if (!userId) return;
     setLoading(true);
     try {
       const { data, error } = await supabase
         .from("tasks")
-        .select(`
-          *,
-          subtasks (*)
-        `)
+        .select(`*, subtasks (*)`)
         .eq("user_id", userId)
         .order("scheduled_date", { ascending: true })
         .order("created_at",     { ascending: true });
 
       if (error) throw error;
 
-      // Sort subtasks by created_at within each task
       const normalized = (data || []).map(t => ({
         ...t,
         subtasks: (t.subtasks || []).sort(
           (a, b) => new Date(a.created_at) - new Date(b.created_at)
         ),
       }));
-
       setTasks(normalized);
     } catch (err) {
       console.error("fetchTasks error:", err);
@@ -42,79 +36,86 @@ export function useTasks(userId) {
     }
   }, [userId]);
 
-  useEffect(() => {
-    fetchTasks();
-  }, [fetchTasks]);
+  useEffect(() => { fetchTasks(); }, [fetchTasks]);
 
-  // ── Insert a batch of parsed tasks + their subtasks ───────────────────────
+  // ── Insert batch of parsed tasks ─────────────────────────────────────────
   const addTasks = async (parsedTasks) => {
     if (!userId) return;
-
     for (const t of parsedTasks) {
-      // Insert the parent task
       const { data: taskRow, error: taskErr } = await supabase
         .from("tasks")
         .insert({
-          user_id:              userId,
-          title:                t.title,
-          description:          t.description,
-          urgency:              t.urgency,
-          importance:           t.importance,
+          user_id: userId,
+          title: t.title, description: t.description,
+          urgency: t.urgency, importance: t.importance,
           suggested_time_block: t.suggested_time_block,
-          time_of_day:          t.time_of_day,
-          scheduled_date:       t.scheduled_date,
-          has_hard_deadline:    t.has_hard_deadline,
-          status:               "pending",
+          time_of_day: t.time_of_day, scheduled_date: t.scheduled_date,
+          has_hard_deadline: t.has_hard_deadline, status: "pending",
         })
-        .select()
-        .single();
+        .select().single();
 
       if (taskErr) { console.error("Insert task error:", taskErr); continue; }
 
-      // Insert subtasks linked to this task
       if (t.subtasks?.length) {
         const subRows = t.subtasks.map(title => ({
-          task_id: taskRow.id,
-          title,
-          status: "pending",
+          task_id: taskRow.id, title, status: "pending",
         }));
         const { error: subErr } = await supabase.from("subtasks").insert(subRows);
         if (subErr) console.error("Insert subtasks error:", subErr);
       }
     }
-
-    await fetchTasks(); // Refresh local state
+    await fetchTasks();
   };
 
-  // ── Toggle task complete / pending ────────────────────────────────────────
-  const toggleComplete = async (taskId) => {
-    const task    = tasks.find(t => t.id === taskId);
-    if (!task) return;
-    const next    = task.status === "completed" ? "pending" : "completed";
-
+  // ── Edit a task (title, description, urgency, importance, date, etc.) ────
+  const editTask = async (taskId, updates) => {
     // Optimistic update
+    setTasks(prev => prev.map(t => t.id === taskId ? { ...t, ...updates } : t));
+
+    const { error } = await supabase
+      .from("tasks")
+      .update({
+        title:                updates.title,
+        description:          updates.description,
+        urgency:              updates.urgency,
+        importance:           updates.importance,
+        suggested_time_block: updates.suggested_time_block,
+        time_of_day:          updates.time_of_day,
+        scheduled_date:       updates.scheduled_date,
+        has_hard_deadline:    updates.has_hard_deadline,
+      })
+      .eq("id", taskId);
+
+    if (error) {
+      console.error("Edit task error:", error);
+      await fetchTasks(); // Re-fetch to revert optimistic update if failed
+    }
+  };
+
+  // ── Toggle task complete ──────────────────────────────────────────────────
+  const toggleComplete = async (taskId) => {
+    const task = tasks.find(t => t.id === taskId);
+    if (!task) return;
+    const next = task.status === "completed" ? "pending" : "completed";
+
     setTasks(prev => prev.map(t =>
       t.id === taskId
         ? { ...t, status: next, subtasks: t.subtasks.map(s => ({ ...s, status: next })) }
         : t
     ));
 
-    // Persist task status
     await supabase.from("tasks").update({ status: next }).eq("id", taskId);
-
-    // Persist all subtask statuses
     await supabase.from("subtasks").update({ status: next }).eq("task_id", taskId);
   };
 
-  // ── Toggle individual subtask ─────────────────────────────────────────────
+  // ── Toggle subtask ────────────────────────────────────────────────────────
   const toggleSubtask = async (taskId, subtaskId) => {
-    const task    = tasks.find(t => t.id === taskId);
+    const task = tasks.find(t => t.id === taskId);
     if (!task) return;
     const subtask = task.subtasks.find(s => s.id === subtaskId);
     if (!subtask) return;
-    const next    = subtask.status === "completed" ? "pending" : "completed";
+    const next = subtask.status === "completed" ? "pending" : "completed";
 
-    // Optimistic update
     const updatedSubtasks = task.subtasks.map(s =>
       s.id === subtaskId ? { ...s, status: next } : s
     );
@@ -126,10 +127,7 @@ export function useTasks(userId) {
         : t
     ));
 
-    // Persist subtask
     await supabase.from("subtasks").update({ status: next }).eq("id", subtaskId);
-
-    // If all subtasks done, mark parent complete too
     if (allDone) {
       await supabase.from("tasks").update({ status: "completed" }).eq("id", taskId);
     } else if (task.status === "completed") {
@@ -137,17 +135,17 @@ export function useTasks(userId) {
     }
   };
 
-  // ── Delete a single task (subtasks cascade via DB foreign key) ────────────
+  // ── Delete task ───────────────────────────────────────────────────────────
   const deleteTask = async (taskId) => {
     setTasks(prev => prev.filter(t => t.id !== taskId));
     await supabase.from("tasks").delete().eq("id", taskId);
   };
 
-  // ── Clear all tasks for this user ─────────────────────────────────────────
+  // ── Clear all ─────────────────────────────────────────────────────────────
   const clearAll = async () => {
     setTasks([]);
     await supabase.from("tasks").delete().eq("user_id", userId);
   };
 
-  return { tasks, loading, addTasks, toggleComplete, toggleSubtask, deleteTask, clearAll, fetchTasks };
+  return { tasks, loading, addTasks, editTask, toggleComplete, toggleSubtask, deleteTask, clearAll, fetchTasks };
 }
