@@ -543,9 +543,358 @@ const WorkdayEditModal = ({ current, onSave, onClose }) => {
 // ─────────────────────────────────────────────
 // Shell / Layout
 // ─────────────────────────────────────────────
-const Shell = ({ view, setView, taskCount, toastMsg, onSignOut, tasks, schedule, onUpdateSchedule, children }) => {
+// ─────────────────────────────────────────────
+// Settings Panel — slide-in from right
+// ─────────────────────────────────────────────
+const CHANGELOG = [
+  {
+    version: "v3.0",
+    date: "June 2026",
+    title: "The Full Desk Update",
+    notes: [
+      "Landing page with video hero background",
+      "Day navigation — browse any past or future date",
+      "Task editing — reschedule, reprioritize anytime",
+      "Workday Rules now editable from the desk",
+      "Calendar overlay with clickable date navigation",
+      "Executive Three hides deferred tasks when active",
+      "Preparation tasks auto-generated for hard deadlines",
+      "Terms of Service and Privacy Policy on registration",
+    ],
+  },
+  {
+    version: "v2.0",
+    date: "May 2026",
+    title: "The Structure Update",
+    notes: [
+      "Calendar overlay with month and year views",
+      "Lock confirmation modal",
+      "Task focus blur — one cognitive load at a time",
+      "Favicon and brand identity",
+      "Spam/junk notice on email confirmation screen",
+      "UX transitions and smooth animations throughout",
+    ],
+  },
+  {
+    version: "v1.0",
+    date: "May 2026",
+    title: "Initial Release",
+    notes: [
+      "AI-powered task parsing via Gemini",
+      "The Dump — freeform brain dump input",
+      "The Desk — Morning / Afternoon / Evening grouping",
+      "Executive Three focus mode",
+      "Supabase authentication and database",
+      "Vercel deployment",
+    ],
+  },
+];
+
+const TOS_FULL = `Terms of Service — The Corner Office
+
+Last updated: June 2026
+
+By creating an account and using The Corner Office, you agree to these terms.
+
+1. Use of Service
+The Corner Office is a productivity tool for personal and professional use. You are responsible for all content you input.
+
+2. Account Responsibility
+You are responsible for maintaining the confidentiality of your credentials. Notify us immediately of any unauthorized use.
+
+3. Data & Privacy
+Your task data is stored securely and is accessible only to you. We do not sell, share, or monetize your personal data.
+
+4. Acceptable Use
+You agree not to use The Corner Office for any unlawful purpose, to distribute malware, or to attempt unauthorized access to our systems.
+
+5. Availability
+We strive for high availability but do not guarantee uninterrupted service. We may update the service at any time.
+
+6. Limitation of Liability
+The Corner Office is provided "as is" without warranties of any kind. We are not liable for any loss of data or business disruption.
+
+7. Changes to Terms
+We may update these terms from time to time. Continued use constitutes acceptance of updated terms.`;
+
+const PRIVACY_FULL = `Privacy Policy — The Corner Office
+
+Last updated: June 2026
+
+1. Data We Collect
+- Account information: email address and encrypted password
+- Task data: titles, descriptions, schedules, and subtasks you create
+- Preferences: workday rules, timezone, focus mode settings
+
+2. How We Use Your Data
+Your data is used solely to provide The Corner Office service:
+- Supabase for secure database storage and authentication
+- Google Gemini API to process task dumps (inputs are not stored by us)
+
+3. Data Security
+All data is protected by row-level security — only you can access your own records. Authentication is handled by Supabase, which is SOC 2 compliant.
+
+4. Data Retention
+Your data is retained as long as your account is active. You may delete your tasks at any time. Contact us for full account deletion.
+
+5. Third-Party Services
+- Supabase (database and authentication)
+- Google Gemini (AI task parsing)
+- Vercel (hosting and serverless functions)
+- Brevo (transactional email)
+
+6. Cookies
+We use minimal session cookies for authentication only. No tracking or advertising cookies are used.
+
+7. Contact
+For privacy concerns, reach out through the app or via our GitHub repository.`;
+
+const SettingsPanel = ({ user, onClose }) => {
+  const [activeSection, setActiveSection] = useState("profile");
+  const [legalView,     setLegalView]     = useState(null); // "tos" | "privacy"
+
+  const sections = [
+    { id: "profile",   label: "Profile" },
+    { id: "legal",     label: "Legal" },
+    { id: "changelog", label: "What's New" },
+  ];
+
+  const rowStyle = {
+    padding: "14px 0",
+    borderBottom: "1px solid rgba(45,40,36,0.07)",
+    display: "flex", justifyContent: "space-between", alignItems: "center",
+  };
+
+  return (
+    <>
+      {/* Backdrop */}
+      <div
+        onClick={onClose}
+        style={{
+          position: "fixed", inset: 0, background: "rgba(45,40,36,0.3)",
+          backdropFilter: "blur(4px)", WebkitBackdropFilter: "blur(4px)",
+          zIndex: 400, animation: "co-fade 0.2s ease",
+        }}
+      />
+
+      {/* Panel */}
+      <div style={{
+        position: "fixed", top: 0, right: 0, bottom: 0,
+        width: "min(400px, 92vw)",
+        background: T.paper,
+        borderLeft: "1px solid rgba(45,40,36,0.12)",
+        zIndex: 401,
+        display: "flex", flexDirection: "column",
+        animation: "settings-slide-in 0.35s cubic-bezier(0.16,1,0.3,1) forwards",
+        boxShadow: "-8px 0 32px rgba(45,40,36,0.08)",
+      }}>
+        <style>{`
+          @keyframes settings-slide-in {
+            from { transform: translateX(100%); opacity: 0; }
+            to   { transform: translateX(0);    opacity: 1; }
+          }
+        `}</style>
+
+        {/* Panel header */}
+        <div style={{
+          padding: "24px 28px 20px",
+          borderBottom: "1px solid rgba(45,40,36,0.1)",
+          display: "flex", justifyContent: "space-between", alignItems: "center",
+          flexShrink: 0,
+        }}>
+          <div>
+            <div style={{ fontFamily: T.serif, fontSize: 20, color: T.walnut }}>Settings</div>
+            <p style={{ fontFamily: T.mono, fontSize: 8, letterSpacing: "0.2em", textTransform: "uppercase", color: T.brass, marginTop: 2 }}>
+              Your corner office preferences
+            </p>
+          </div>
+          <button onClick={onClose} style={{
+            background: "none", border: "none", cursor: "pointer",
+            color: "rgba(45,40,36,0.4)", fontSize: 20, lineHeight: 1, padding: 4,
+            transition: "color 0.2s",
+          }}
+            onMouseEnter={e => e.currentTarget.style.color = T.ink}
+            onMouseLeave={e => e.currentTarget.style.color = "rgba(45,40,36,0.4)"}>
+            ×
+          </button>
+        </div>
+
+        {/* Section tabs */}
+        <div style={{
+          display: "flex", borderBottom: "1px solid rgba(45,40,36,0.1)",
+          flexShrink: 0,
+        }}>
+          {sections.map(s => (
+            <button key={s.id} onClick={() => { setActiveSection(s.id); setLegalView(null); }}
+              style={{
+                flex: 1, padding: "12px 0",
+                background: "none",
+                border: "none",
+                borderBottom: activeSection === s.id ? `2px solid ${T.brass}` : "2px solid transparent",
+                cursor: "pointer",
+                fontFamily: T.mono, fontSize: 8, letterSpacing: "0.2em", textTransform: "uppercase",
+                color: activeSection === s.id ? T.brass : "rgba(45,40,36,0.5)",
+                transition: "all 0.25s",
+                marginBottom: -1,
+              }}>
+              {s.label}
+            </button>
+          ))}
+        </div>
+
+        {/* Panel body — scrollable */}
+        <div style={{ flex: 1, overflowY: "auto", padding: "24px 28px" }}>
+
+          {/* ── Profile ── */}
+          {activeSection === "profile" && (
+            <div className="co-slide">
+              <div style={{ marginBottom: 28 }}>
+                <p style={{ fontFamily: T.mono, fontSize: 9, letterSpacing: "0.2em", textTransform: "uppercase", color: T.brass, marginBottom: 16 }}>
+                  Account
+                </p>
+                <div style={rowStyle}>
+                  <span style={{ fontFamily: T.mono, fontSize: 9, color: "rgba(45,40,36,0.5)", textTransform: "uppercase", letterSpacing: "0.15em" }}>Email</span>
+                  <span style={{ fontFamily: T.serif, fontSize: 14, color: T.ink }}>{user?.email || "—"}</span>
+                </div>
+                <div style={rowStyle}>
+                  <span style={{ fontFamily: T.mono, fontSize: 9, color: "rgba(45,40,36,0.5)", textTransform: "uppercase", letterSpacing: "0.15em" }}>Account ID</span>
+                  <span style={{ fontFamily: T.mono, fontSize: 9, color: "rgba(45,40,36,0.4)" }}>{user?.id?.slice(0, 8) + "..." || "—"}</span>
+                </div>
+                <div style={rowStyle}>
+                  <span style={{ fontFamily: T.mono, fontSize: 9, color: "rgba(45,40,36,0.5)", textTransform: "uppercase", letterSpacing: "0.15em" }}>Member Since</span>
+                  <span style={{ fontFamily: T.serif, fontSize: 13, color: "rgba(45,40,36,0.7)" }}>
+                    {user?.created_at ? new Date(user.created_at).toLocaleDateString("en-US", { month: "long", year: "numeric" }) : "—"}
+                  </span>
+                </div>
+              </div>
+
+              <div style={{
+                padding: "14px 16px",
+                background: "rgba(140,115,85,0.05)",
+                border: "1px solid rgba(140,115,85,0.15)",
+                marginTop: 8,
+              }}>
+                <p style={{ fontFamily: T.mono, fontSize: 8, letterSpacing: "0.15em", textTransform: "uppercase", color: T.brass, marginBottom: 6 }}>
+                  Note
+                </p>
+                <p style={{ fontFamily: T.serif, fontSize: 12, color: "rgba(45,40,36,0.65)", lineHeight: 1.7, fontStyle: "italic" }}>
+                  Email and password changes are not available at this time. Contact support if you need assistance with your account credentials.
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* ── Legal ── */}
+          {activeSection === "legal" && !legalView && (
+            <div className="co-slide">
+              <p style={{ fontFamily: T.mono, fontSize: 9, letterSpacing: "0.2em", textTransform: "uppercase", color: T.brass, marginBottom: 16 }}>
+                Legal Documents
+              </p>
+
+              {[
+                { id: "tos",     label: "Terms of Service",  desc: "Your rights and responsibilities when using The Corner Office." },
+                { id: "privacy", label: "Privacy Policy",     desc: "How we collect, store, and protect your personal data." },
+              ].map(doc => (
+                <button key={doc.id} onClick={() => setLegalView(doc.id)}
+                  style={{
+                    display: "flex", justifyContent: "space-between", alignItems: "center",
+                    width: "100%", padding: "16px 0",
+                    borderBottom: "1px solid rgba(45,40,36,0.07)",
+                    background: "none", border: "none", borderBottom: "1px solid rgba(45,40,36,0.07)",
+                    cursor: "pointer", textAlign: "left",
+                    transition: "all 0.2s",
+                  }}
+                  onMouseEnter={e => e.currentTarget.style.paddingLeft = "4px"}
+                  onMouseLeave={e => e.currentTarget.style.paddingLeft = "0"}>
+                  <div>
+                    <div style={{ fontFamily: T.serif, fontSize: 15, color: T.walnut, marginBottom: 3 }}>{doc.label}</div>
+                    <div style={{ fontFamily: T.serif, fontSize: 11, color: "rgba(45,40,36,0.5)", fontStyle: "italic" }}>{doc.desc}</div>
+                  </div>
+                  <span style={{ fontFamily: T.mono, fontSize: 12, color: "rgba(45,40,36,0.3)", flexShrink: 0, marginLeft: 12 }}>›</span>
+                </button>
+              ))}
+
+              <p style={{ fontFamily: T.serif, fontSize: 11, color: "rgba(45,40,36,0.4)", fontStyle: "italic", marginTop: 20, lineHeight: 1.7 }}>
+                Last updated June 2026. By continuing to use The Corner Office, you agree to these documents.
+              </p>
+            </div>
+          )}
+
+          {/* ── Legal document view ── */}
+          {activeSection === "legal" && legalView && (
+            <div className="co-slide">
+              <button onClick={() => setLegalView(null)}
+                style={{ background: "none", border: "none", cursor: "pointer", fontFamily: T.mono, fontSize: 8, letterSpacing: "0.2em", textTransform: "uppercase", color: T.brass, textDecoration: "underline", textUnderlineOffset: 2, marginBottom: 20, padding: 0 }}>
+                ← Back
+              </button>
+              <div style={{ fontFamily: T.serif, fontSize: 17, color: T.walnut, marginBottom: 16 }}>
+                {legalView === "tos" ? "Terms of Service" : "Privacy Policy"}
+              </div>
+              <div style={{ fontFamily: T.serif, fontSize: 12, color: "rgba(45,40,36,0.7)", lineHeight: 1.85, whiteSpace: "pre-line" }}>
+                {legalView === "tos" ? TOS_FULL : PRIVACY_FULL}
+              </div>
+            </div>
+          )}
+
+          {/* ── Changelog ── */}
+          {activeSection === "changelog" && (
+            <div className="co-slide">
+              <p style={{ fontFamily: T.mono, fontSize: 9, letterSpacing: "0.2em", textTransform: "uppercase", color: T.brass, marginBottom: 20 }}>
+                Release History
+              </p>
+              {CHANGELOG.map((release, ri) => (
+                <div key={release.version} style={{
+                  marginBottom: 28,
+                  paddingBottom: 28,
+                  borderBottom: ri < CHANGELOG.length - 1 ? "1px solid rgba(45,40,36,0.07)" : "none",
+                }}>
+                  <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 4 }}>
+                    <span style={{
+                      fontFamily: T.mono, fontSize: 9, letterSpacing: "0.15em",
+                      background: ri === 0 ? T.brass : "rgba(45,40,36,0.08)",
+                      color: ri === 0 ? T.paper : "rgba(45,40,36,0.5)",
+                      padding: "2px 8px",
+                    }}>{release.version}</span>
+                    <span style={{ fontFamily: T.mono, fontSize: 8, color: "rgba(45,40,36,0.35)", letterSpacing: "0.1em" }}>{release.date}</span>
+                  </div>
+                  <div style={{ fontFamily: T.serif, fontSize: 15, color: T.walnut, marginBottom: 10, fontWeight: 500 }}>{release.title}</div>
+                  <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
+                    {release.notes.map((note, ni) => (
+                      <li key={ni} style={{
+                        fontFamily: T.serif, fontSize: 12, color: "rgba(45,40,36,0.65)",
+                        lineHeight: 1.7, fontStyle: "italic",
+                        paddingLeft: 12, position: "relative", marginBottom: 2,
+                      }}>
+                        <span style={{ position: "absolute", left: 0, color: T.brass, fontStyle: "normal" }}>·</span>
+                        {note}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Panel footer */}
+        <div style={{
+          padding: "16px 28px",
+          borderTop: "1px solid rgba(45,40,36,0.08)",
+          flexShrink: 0,
+        }}>
+          <p style={{ fontFamily: T.mono, fontSize: 8, letterSpacing: "0.15em", textTransform: "uppercase", color: "rgba(45,40,36,0.3)", textAlign: "center" }}>
+            The Corner Office · v3.0 · All Rights Reserved 2026
+          </p>
+        </div>
+      </div>
+    </>
+  );
+};
+
+const Shell = ({ view, setView, taskCount, toastMsg, onSignOut, tasks, schedule, onUpdateSchedule, user, children }) => {
   const [showLockConfirm, setShowLockConfirm] = useState(false);
   const [showCalendar,    setShowCalendar]    = useState(false);
+  const [showSettings,    setShowSettings]    = useState(false);
 
   return (
     <div style={{
@@ -573,6 +922,23 @@ const Shell = ({ view, setView, taskCount, toastMsg, onSignOut, tasks, schedule,
               The Desk
               {taskCount > 0 && <span style={{ background: T.brass, color: T.paper, fontSize: 8, padding: "1px 5px", marginLeft: 4 }}>{taskCount}</span>}
             </Btn>
+            {/* Settings icon */}
+            <button
+              onClick={() => setShowSettings(true)}
+              title="Settings"
+              style={{
+                background: "none", border: "none", cursor: "pointer",
+                color: "rgba(45,40,36,0.5)", padding: "6px 8px",
+                display: "flex", alignItems: "center", transition: "color 0.25s",
+              }}
+              onMouseEnter={e => e.currentTarget.style.color = T.brass}
+              onMouseLeave={e => e.currentTarget.style.color = "rgba(45,40,36,0.5)"}>
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="3"/>
+                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+              </svg>
+            </button>
+
             <Btn variant="ghost" onClick={() => setShowLockConfirm(true)}
               style={{ color: T.brass, opacity: 1, borderLeft: `1px solid rgba(140,115,85,0.25)`, paddingLeft: 14, marginLeft: 4 }}>
               Lock
@@ -603,6 +969,10 @@ const Shell = ({ view, setView, taskCount, toastMsg, onSignOut, tasks, schedule,
 
       {showCalendar && (
         <CalendarOverlay tasks={tasks || []} onClose={() => setShowCalendar(false)} tz={schedule?.timezone} />
+      )}
+
+      {showSettings && (
+        <SettingsPanel user={user} onClose={() => setShowSettings(false)} />
       )}
     </div>
   );
@@ -1746,7 +2116,8 @@ export default function App() {
 
   return (
     <Shell view={view} setView={setView} taskCount={activeCount} toastMsg={toastMsg}
-      onSignOut={handleSignOut} tasks={tasks} schedule={schedule} onUpdateSchedule={handleUpdateCtx}>
+      onSignOut={handleSignOut} tasks={tasks} schedule={schedule} onUpdateSchedule={handleUpdateCtx}
+      user={user}>
       {view === "interview" && (
         <Interview initial={schedule} onComplete={async (prefs) => {
           await saveSchedule(prefs);
