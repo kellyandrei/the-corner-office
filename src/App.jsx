@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { useAuth }     from "./hooks/useAuth";
 import { useTasks }    from "./hooks/useTasks";
@@ -670,12 +670,11 @@ const SettingsPanel = ({ user, onClose }) => {
 
   return createPortal(
     <>
-      {/* Backdrop */}
+      {/* Backdrop — no blur here, blur bleeds into sibling panel */}
       <div
         onClick={onClose}
         style={{
-          position: "fixed", inset: 0, background: "rgba(45,40,36,0.3)",
-          backdropFilter: "blur(4px)", WebkitBackdropFilter: "blur(4px)",
+          position: "fixed", inset: 0, background: "rgba(45,40,36,0.45)",
           zIndex: 9000, animation: "co-fade 0.2s ease",
         }}
       />
@@ -686,7 +685,7 @@ const SettingsPanel = ({ user, onClose }) => {
         width: "min(400px, 92vw)",
         background: T.paper,
         borderLeft: "1px solid rgba(45,40,36,0.12)",
-        zIndex: 401,
+        zIndex: 9001,
         display: "flex", flexDirection: "column",
         animation: "settings-slide-in 0.35s cubic-bezier(0.16,1,0.3,1) forwards",
         boxShadow: "-8px 0 32px rgba(45,40,36,0.08)",
@@ -984,6 +983,214 @@ const Shell = ({ view, setView, taskCount, toastMsg, onSignOut, tasks, schedule,
 // ─────────────────────────────────────────────
 // Landing
 // ─────────────────────────────────────────────
+// ─────────────────────────────────────────────
+// Intro Loader — cinematic C/O reveal
+// ─────────────────────────────────────────────
+const IntroLoader = ({ onComplete }) => {
+  const [phase, setPhase] = useState(0);
+  // phase 0: black
+  // phase 1: C/O fades in
+  // phase 2: subtitle + line expand
+  // phase 3: fade out
+
+  useEffect(() => {
+    const timers = [
+      setTimeout(() => setPhase(1), 300),   // C/O appears
+      setTimeout(() => setPhase(2), 1200),  // subtitle appears
+      setTimeout(() => setPhase(3), 2400),  // start fade out
+      setTimeout(() => onComplete(), 3200), // done
+    ];
+    return () => timers.forEach(clearTimeout);
+  }, []);
+
+  return (
+    <div style={{
+      position: "fixed", inset: 0, zIndex: 99999,
+      background: "#1a0f0a",
+      display: "flex", flexDirection: "column",
+      alignItems: "center", justifyContent: "center",
+      opacity: phase === 3 ? 0 : 1,
+      transition: phase === 3 ? "opacity 0.8s ease" : "none",
+      pointerEvents: "none",
+    }}>
+      <style>{`
+        @keyframes co-intro-logo {
+          from { opacity: 0; transform: scale(0.92) translateY(8px); }
+          to   { opacity: 1; transform: scale(1)    translateY(0); }
+        }
+        @keyframes co-intro-sub {
+          from { opacity: 0; transform: translateY(6px); letter-spacing: 0.6em; }
+          to   { opacity: 1; transform: translateY(0);   letter-spacing: 0.45em; }
+        }
+        @keyframes co-intro-line {
+          from { width: 0; }
+          to   { width: 120px; }
+        }
+      `}</style>
+
+      {/* C/O wordmark */}
+      <div style={{
+        fontFamily: "'EB Garamond', Georgia, serif",
+        fontSize: "clamp(72px, 14vw, 110px)",
+        fontWeight: 300,
+        letterSpacing: "0.15em",
+        color: "#F4F1EA",
+        lineHeight: 1,
+        opacity: phase >= 1 ? 1 : 0,
+        animation: phase >= 1 ? "co-intro-logo 0.9s cubic-bezier(0.16,1,0.3,1) forwards" : "none",
+        marginBottom: 4,
+      }}>C/O</div>
+
+      {/* Expanding line */}
+      <div style={{
+        height: 1,
+        background: "#8C7355",
+        marginBottom: 20,
+        animation: phase >= 2 ? "co-intro-line 0.7s cubic-bezier(0.16,1,0.3,1) forwards" : "none",
+        width: phase >= 2 ? 120 : 0,
+        opacity: phase >= 2 ? 1 : 0,
+        transition: "opacity 0.3s",
+      }} />
+
+      {/* Subtitle */}
+      <div style={{
+        fontFamily: "'IBM Plex Mono', monospace",
+        fontSize: 10,
+        letterSpacing: "0.45em",
+        textTransform: "uppercase",
+        color: "rgba(244,241,234,0.5)",
+        opacity: phase >= 2 ? 1 : 0,
+        animation: phase >= 2 ? "co-intro-sub 0.7s cubic-bezier(0.16,1,0.3,1) forwards" : "none",
+      }}>The Corner Office</div>
+    </div>
+  );
+};
+
+// ─────────────────────────────────────────────
+// Splash Screen — cinematic intro
+// ─────────────────────────────────────────────
+const Splash = ({ onComplete }) => {
+  const [phase, setPhase] = useState(0);
+  // phase 0: dark screen
+  // phase 1: C/O appears
+  // phase 2: subtitle appears + line draws
+  // phase 3: fade out
+
+  useEffect(() => {
+    const timers = [
+      setTimeout(() => setPhase(1), 300),
+      setTimeout(() => setPhase(2), 1100),
+      setTimeout(() => setPhase(3), 2400),
+      setTimeout(() => onComplete(), 3200),
+    ];
+    return () => timers.forEach(clearTimeout);
+  }, []);
+
+  return (
+    <div style={{
+      position: "fixed", inset: 0,
+      background: "#0e0b08",
+      display: "flex", flexDirection: "column",
+      alignItems: "center", justifyContent: "center",
+      zIndex: 99999,
+      opacity: phase === 3 ? 0 : 1,
+      transition: phase === 3 ? "opacity 0.8s ease" : "none",
+      userSelect: "none",
+    }}>
+      <style>{`
+        @keyframes co-logo-in {
+          from { opacity: 0; transform: scale(0.92) translateY(8px); }
+          to   { opacity: 1; transform: scale(1)    translateY(0); }
+        }
+        @keyframes co-sub-in {
+          from { opacity: 0; letter-spacing: 0.6em; }
+          to   { opacity: 1; letter-spacing: 0.5em; }
+        }
+        @keyframes co-line-draw {
+          from { width: 0; }
+          to   { width: 48px; }
+        }
+      `}</style>
+
+      {/* Subtle texture overlay */}
+      <div style={{
+        position: "absolute", inset: 0,
+        backgroundImage: "radial-gradient(rgba(140,115,85,0.04) 1px, transparent 1px)",
+        backgroundSize: "32px 32px",
+        pointerEvents: "none",
+      }} />
+
+      {/* Logo mark */}
+      <div style={{
+        opacity: phase >= 1 ? 1 : 0,
+        animation: phase >= 1 ? "co-logo-in 0.9s cubic-bezier(0.16,1,0.3,1) forwards" : "none",
+        textAlign: "center",
+        position: "relative",
+      }}>
+        {/* Brass accent line — top */}
+        <div style={{
+          height: 1,
+          background: "linear-gradient(to right, transparent, #8C7355, transparent)",
+          marginBottom: 28,
+          opacity: phase >= 2 ? 1 : 0,
+          animation: phase >= 2 ? "co-line-draw 0.6s ease forwards" : "none",
+          margin: "0 auto 28px",
+          transition: "opacity 0.3s",
+        }} />
+
+        {/* C/O wordmark */}
+        <div style={{
+          fontFamily: "'EB Garamond', Georgia, serif",
+          fontSize: "clamp(64px, 14vw, 108px)",
+          fontWeight: 300,
+          color: "#F4F1EA",
+          letterSpacing: "0.15em",
+          lineHeight: 1,
+          marginBottom: 20,
+        }}>C/O</div>
+
+        {/* Subtitle */}
+        <div style={{
+          opacity: phase >= 2 ? 1 : 0,
+          animation: phase >= 2 ? "co-sub-in 0.8s cubic-bezier(0.16,1,0.3,1) forwards" : "none",
+        }}>
+          <p style={{
+            fontFamily: "'IBM Plex Mono', monospace",
+            fontSize: 9,
+            letterSpacing: "0.5em",
+            textTransform: "uppercase",
+            color: "#8C7355",
+            marginBottom: 24,
+          }}>The Corner Office</p>
+        </div>
+
+        {/* Brass accent line — bottom */}
+        <div style={{
+          height: 1,
+          background: "linear-gradient(to right, transparent, #8C7355, transparent)",
+          opacity: phase >= 2 ? 1 : 0,
+          animation: phase >= 2 ? "co-line-draw 0.6s ease forwards" : "none",
+          margin: "0 auto",
+          transition: "opacity 0.3s",
+        }} />
+      </div>
+
+      {/* Subtle tagline */}
+      {phase >= 2 && (
+        <p style={{
+          position: "absolute", bottom: 48,
+          fontFamily: "'IBM Plex Mono', monospace",
+          fontSize: 8, letterSpacing: "0.25em", textTransform: "uppercase",
+          color: "rgba(244,241,234,0.2)",
+          animation: "co-sub-in 1s ease forwards",
+        }}>
+          A quiet place for your focus.
+        </p>
+      )}
+    </div>
+  );
+};
+
 const Landing = ({ onEnter }) => {
   const VIDEO_URL = "https://videos.pexels.com/video-files/31804129/13550134_1440_2560_30fps.mp4";
   useScrollReveal();
@@ -1444,8 +1651,52 @@ const EXAMPLE_DUMP =
   `Reserve table for Friday lunch client sync.`;
 
 const Dump = ({ onSubmit, prevInput, ctx, apiError, clearError }) => {
-  const [text, setText] = useState(prevInput || "");
+  const [text,        setText]        = useState(prevInput || "");
+  const [listening,   setListening]   = useState(false);
+  const [voiceError,  setVoiceError]  = useState(null);
+  const recognitionRef = useRef(null);
   const tz = ctx?.timezone || userTZ();
+
+  const startVoice = () => {
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR) { setVoiceError("Voice input is not supported in this browser. Try Chrome or Edge."); return; }
+    setVoiceError(null);
+
+    const rec = new SR();
+    rec.continuous       = true;
+    rec.interimResults   = true;
+    rec.lang             = "en-US";
+    recognitionRef.current = rec;
+
+    let finalTranscript = "";
+
+    rec.onresult = (e) => {
+      let interim = "";
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        if (e.results[i].isFinal) finalTranscript += e.results[i][0].transcript + " ";
+        else interim += e.results[i][0].transcript;
+      }
+      setText(prev => {
+        const base = prev.trimEnd();
+        return (base ? base + " " : "") + finalTranscript + interim;
+      });
+    };
+
+    rec.onerror = (e) => {
+      if (e.error !== "aborted") setVoiceError("Voice input stopped. " + e.error);
+      setListening(false);
+    };
+
+    rec.onend = () => setListening(false);
+
+    rec.start();
+    setListening(true);
+  };
+
+  const stopVoice = () => {
+    recognitionRef.current?.stop();
+    setListening(false);
+  };
 
   return (
     <div className="co-fade" style={{ maxWidth: 680, margin: "auto", paddingBottom: 32 }}>
@@ -1460,7 +1711,33 @@ const Dump = ({ onSubmit, prevInput, ctx, apiError, clearError }) => {
           <div style={{ fontFamily: T.serif, fontSize: 36, color: T.walnut }}>What's on your mind?</div>
           <p style={{ fontFamily: T.mono, fontSize: 9, letterSpacing: "0.2em", textTransform: "uppercase", color: T.brass, marginTop: 6 }}>{getFormattedDate(tz)}</p>
         </div>
-        <div style={{ display: "flex", gap: 10 }}>
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          {/* Mic / voice input button */}
+          <button
+            onClick={listening ? stopVoice : startVoice}
+            title={listening ? "Stop recording" : "Voice input (Chrome/Edge)"}
+            style={{
+              background: listening ? T.brass : "none",
+              border: `1px solid ${listening ? T.brass : "rgba(140,115,85,0.4)"}`,
+              color: listening ? T.paper : T.brass,
+              padding: "5px 9px", cursor: "pointer",
+              display: "flex", alignItems: "center", gap: 5,
+              transition: "all 0.3s",
+            }}>
+            {listening ? (
+              <>
+                <span style={{ width: 7, height: 7, borderRadius: "50%", background: T.paper, animation: "co-pulse 1s infinite", display: "inline-block" }} />
+                <span style={{ fontFamily: T.mono, fontSize: 8, letterSpacing: "0.15em", textTransform: "uppercase" }}>Stop</span>
+              </>
+            ) : (
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+                <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+                <line x1="12" y1="19" x2="12" y2="23"/>
+                <line x1="8"  y1="23" x2="16" y2="23"/>
+              </svg>
+            )}
+          </button>
           <button onClick={() => setText(EXAMPLE_DUMP)}
             style={{ fontFamily: T.mono, fontSize: 9, textTransform: "uppercase", letterSpacing: "0.2em", border: `1px solid rgba(140,115,85,0.4)`, color: T.brass, background: "none", padding: "6px 12px", cursor: "pointer" }}>
             Example
@@ -1473,11 +1750,27 @@ const Dump = ({ onSubmit, prevInput, ctx, apiError, clearError }) => {
           )}
         </div>
       </div>
-      <div style={{ borderLeft: `2px solid rgba(140,115,85,0.35)`, background: "rgba(255,255,255,0.08)", marginBottom: 28 }}>
+      <div style={{ borderLeft: `2px solid ${listening ? T.brass : "rgba(140,115,85,0.35)"}`, background: listening ? "rgba(140,115,85,0.04)" : "rgba(255,255,255,0.08)", marginBottom: voiceError ? 8 : 28, transition: "all 0.3s" }}>
         <textarea autoFocus value={text} onChange={e => setText(e.target.value)}
-          placeholder="Unload here. Chaotic lists, raw notes, meeting transcripts... I'll organize it."
+          placeholder={listening ? "Listening... speak your tasks." : "Unload here. Chaotic lists, raw notes, meeting transcripts... I'll organize it."}
           style={{ width: "100%", background: "transparent", border: "none", padding: "16px 20px", fontFamily: T.serif, fontSize: 18, resize: "none", height: "35vh", outline: "none", color: T.ink, lineHeight: 1.7 }} />
       </div>
+      {voiceError && (
+        <p style={{ fontFamily: T.mono, fontSize: 9, color: "rgba(140,80,80,0.8)", letterSpacing: "0.1em", marginBottom: 20 }}>
+          {voiceError}
+        </p>
+      )}
+      {voiceError && (
+        <p style={{ fontFamily: T.mono, fontSize: 9, color: "#7a2020", marginBottom: 10, letterSpacing: "0.1em" }}>
+          {voiceError}
+        </p>
+      )}
+      {listening && (
+        <p style={{ fontFamily: T.mono, fontSize: 9, color: T.brass, marginBottom: 10, letterSpacing: "0.15em", textTransform: "uppercase", display: "flex", alignItems: "center", gap: 6 }}>
+          <span style={{ width: 5, height: 5, borderRadius: "50%", background: T.brass, animation: "co-pulse 1s infinite", display: "inline-block" }} />
+          Listening... speak freely.
+        </p>
+      )}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <span style={{ fontFamily: T.mono, fontSize: 9, color: "rgba(45,40,36,0.4)" }}>
           Strict sorting criteria will apply.{ctx?.focusMode ? " Focus Mode is active." : ""}
@@ -1995,7 +2288,9 @@ export default function App() {
   const { tasks, addTasks, editTask, toggleComplete, toggleSubtask, deleteTask, clearAll } = useTasks(user?.id);
   const { schedule, loading: schedLoading, isFirstTime, saveSchedule, updateSchedule } = useSchedule(user?.id);
 
-  const [view,         setView]         = useState("landing");
+  // Show intro only once per browser session
+  const [showIntro,    setShowIntro]    = useState(() => !sessionStorage.getItem("co_intro_seen"));
+  const [view,         setView]         = useState("splash");
   const [prevInput,    setPrevInput]    = useState("");
   const [apiError,     setApiError]     = useState(null);
   const [toastMsg,     setToastMsg]     = useState(null);
@@ -2005,7 +2300,7 @@ export default function App() {
 
   useEffect(() => {
     if (authLoading) return;
-    if (!user) { if (view !== "lobby") setView("landing"); return; }
+    if (!user) { if (view !== "lobby" && view !== "splash") setView("landing"); return; }
     if (schedLoading) return;
     if (isFirstTime) { setView("interview"); }
     else             { setView(tasks.length > 0 ? "desk" : "dump"); }
@@ -2072,6 +2367,19 @@ export default function App() {
   const handleClearAll  = async ()    => { await clearAll(); toast("Cleared from the desk."); };
   const handleUpdateCtx = async (ctx) => { await updateSchedule(ctx); };
 
+  // Show cinematic intro on first visit this session
+  if (showIntro) {
+    return (
+      <>
+        <GlobalStyles />
+        <IntroLoader onComplete={() => {
+          sessionStorage.setItem("co_intro_seen", "1");
+          setShowIntro(false);
+        }} />
+      </>
+    );
+  }
+
   if (authLoading) {
     return (
       <div style={{ minHeight: "100vh", background: T.paper, display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -2094,6 +2402,15 @@ export default function App() {
       The Corner Office · All Rights Reserved 2026
     </footer>
   );
+
+  if (view === "splash") {
+    return (
+      <>
+        <GlobalStyles />
+        <Splash onComplete={() => setView("landing")} />
+      </>
+    );
+  }
 
   if (view === "landing") {
     return (
