@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { createPortal } from "react-dom";
 import { useAuth }     from "./hooks/useAuth";
 import { useTasks }    from "./hooks/useTasks";
 import { useSchedule } from "./hooks/useSchedule";
@@ -159,12 +160,12 @@ const Toggle = ({ on, onToggle }) => (
   </button>
 );
 
-const Modal = ({ children, onClose, maxWidth = 480 }) => (
+const Modal = ({ children, onClose, maxWidth = 480 }) => createPortal(
   <div onClick={e => e.target === e.currentTarget && onClose()} style={{
     position: "fixed", inset: 0, background: "rgba(45,40,36,0.55)",
     backdropFilter: "blur(20px)", WebkitBackdropFilter: "blur(20px)",
     display: "flex", alignItems: "center",
-    justifyContent: "center", zIndex: 300, padding: 16,
+    justifyContent: "center", zIndex: 9000, padding: 16,
     animation: "co-fade 0.25s ease",
   }}>
     <div style={{
@@ -182,7 +183,8 @@ const Modal = ({ children, onClose, maxWidth = 480 }) => (
       </button>
       {children}
     </div>
-  </div>
+  </div>,
+  document.body
 );
 
 const Toast = ({ msg }) => msg ? (
@@ -249,11 +251,12 @@ const CalendarOverlay = ({ tasks, onClose, tz, onSelectDate }) => {
   const weekDays    = ["Su","Mo","Tu","We","Th","Fr","Sa"];
   const dotColor    = { crucial: T.walnut, important: T.brass, routine: "rgba(45,40,36,0.3)" };
 
-  return (
+  return createPortal(
     <div onClick={e => e.target === e.currentTarget && onClose()} style={{
-      position: "fixed", inset: 0, background: "rgba(45,40,36,0.5)",
-      backdropFilter: "blur(20px)", display: "flex", alignItems: "center",
-      justifyContent: "center", zIndex: 300, padding: 16, animation: "co-fade 0.25s ease",
+      position: "fixed", inset: 0, background: "rgba(45,40,36,0.55)",
+      backdropFilter: "blur(20px)", WebkitBackdropFilter: "blur(20px)",
+      display: "flex", alignItems: "center",
+      justifyContent: "center", zIndex: 9000, padding: 16, animation: "co-fade 0.25s ease",
     }}>
       <div style={{
         background: T.paper, border: `1px solid rgba(45,40,36,0.2)`,
@@ -349,7 +352,7 @@ const CalendarOverlay = ({ tasks, onClose, tz, onSelectDate }) => {
         </div>
       </div>
     </div>
-  );
+  , document.body);
 };
 
 // ─────────────────────────────────────────────
@@ -665,7 +668,7 @@ const SettingsPanel = ({ user, onClose }) => {
     display: "flex", justifyContent: "space-between", alignItems: "center",
   };
 
-  return (
+  return createPortal(
     <>
       {/* Backdrop */}
       <div
@@ -673,7 +676,7 @@ const SettingsPanel = ({ user, onClose }) => {
         style={{
           position: "fixed", inset: 0, background: "rgba(45,40,36,0.3)",
           backdropFilter: "blur(4px)", WebkitBackdropFilter: "blur(4px)",
-          zIndex: 400, animation: "co-fade 0.2s ease",
+          zIndex: 9000, animation: "co-fade 0.2s ease",
         }}
       />
 
@@ -888,7 +891,7 @@ const SettingsPanel = ({ user, onClose }) => {
         </div>
       </div>
     </>
-  );
+  , document.body);
 };
 
 const Shell = ({ view, setView, taskCount, toastMsg, onSignOut, tasks, schedule, onUpdateSchedule, user, children }) => {
