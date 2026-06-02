@@ -1657,29 +1657,43 @@ const Dump = ({ onSubmit, prevInput, ctx, apiError, clearError }) => {
   const recognitionRef = useRef(null);
   const tz = ctx?.timezone || userTZ();
 
+  // Ref holds the accumulated final transcript across all onresult events.
+  // A plain `let` variable would reset on every render causing duplicate phrases.
+  const finalTranscriptRef = useRef("");
+
   const startVoice = () => {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SR) { setVoiceError("Voice input is not supported in this browser. Try Chrome or Edge."); return; }
     setVoiceError(null);
 
+    // Snapshot current textarea content as the session base
+    finalTranscriptRef.current = text;
+
     const rec = new SR();
-    rec.continuous       = true;
-    rec.interimResults   = true;
-    rec.lang             = "en-US";
+    rec.continuous     = true;
+    rec.interimResults = true;
+    rec.lang           = "en-US";
     recognitionRef.current = rec;
 
-    let finalTranscript = "";
-
     rec.onresult = (e) => {
-      let interim = "";
+      // Only iterate from e.resultIndex — prevents re-processing already-finalized phrases
+      let interimTranscript = "";
+
       for (let i = e.resultIndex; i < e.results.length; i++) {
-        if (e.results[i].isFinal) finalTranscript += e.results[i][0].transcript + " ";
-        else interim += e.results[i][0].transcript;
+        const phrase = e.results[i][0].transcript;
+        if (e.results[i].isFinal) {
+          // Append confirmed phrase to ref (persists across renders)
+          finalTranscriptRef.current = finalTranscriptRef.current
+            ? finalTranscriptRef.current + "\n" + phrase.trim()
+            : phrase.trim();
+        } else {
+          // Keep only latest version of the current interim phrase
+          interimTranscript = phrase;
+        }
       }
-      setText(prev => {
-        const base = prev.trimEnd();
-        return (base ? base + " " : "") + finalTranscript + interim;
-      });
+
+      // Show finals + live interim preview (interim will be replaced when finalized)
+      setText(finalTranscriptRef.current + (interimTranscript ? " " + interimTranscript : ""));
     };
 
     rec.onerror = (e) => {
