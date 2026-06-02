@@ -17,17 +17,52 @@ const T = {
 
 const GlobalStyles = () => (
   <style>{`
-    @keyframes co-spin  { to { transform: rotate(360deg); } }
-    @keyframes co-pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
-    @keyframes co-fade  { from{opacity:0;transform:translateY(10px)} to{opacity:1;transform:translateY(0)} }
-    @keyframes co-slide { from{opacity:0;transform:translateY(6px)}  to{opacity:1;transform:translateY(0)} }
-    .co-fade  { animation: co-fade  0.5s ease forwards; }
-    .co-slide { animation: co-slide 0.35s ease forwards; }
+    @keyframes co-spin    { to { transform: rotate(360deg); } }
+    @keyframes co-pulse   { 0%,100%{opacity:1} 50%{opacity:0.3} }
+    @keyframes co-fade    { from{opacity:0;transform:translateY(10px)} to{opacity:1;transform:translateY(0)} }
+    @keyframes co-slide   { from{opacity:0;transform:translateY(6px)}  to{opacity:1;transform:translateY(0)} }
+    @keyframes co-reveal  { from{opacity:0;transform:translateY(32px)} to{opacity:1;transform:translateY(0)} }
+    @keyframes co-reveal-left { from{opacity:0;transform:translateX(-24px)} to{opacity:1;transform:translateX(0)} }
+    @keyframes co-reveal-right { from{opacity:0;transform:translateX(24px)} to{opacity:1;transform:translateX(0)} }
+    @keyframes co-scale   { from{opacity:0;transform:scale(0.97)} to{opacity:1;transform:scale(1)} }
+    .co-fade   { animation: co-fade  0.5s ease forwards; }
+    .co-slide  { animation: co-slide 0.35s ease forwards; }
+    .co-reveal { opacity:0; }
+    .co-reveal.visible { animation: co-reveal 0.7s cubic-bezier(0.16,1,0.3,1) forwards; }
+    .co-reveal-left { opacity:0; }
+    .co-reveal-left.visible { animation: co-reveal-left 0.7s cubic-bezier(0.16,1,0.3,1) forwards; }
+    .co-reveal-right { opacity:0; }
+    .co-reveal-right.visible { animation: co-reveal-right 0.7s cubic-bezier(0.16,1,0.3,1) forwards; }
+    .co-scale  { opacity:0; }
+    .co-scale.visible  { animation: co-scale  0.6s cubic-bezier(0.16,1,0.3,1) forwards; }
     *{box-sizing:border-box;}
     ::selection{background:#8C7355;color:#F4F1EA;}
     input[type="time"]::-webkit-calendar-picker-indicator{opacity:0.3;cursor:pointer;}
+    html { scroll-behavior: smooth; }
   `}</style>
 );
+
+// ── Scroll-reveal hook ──
+const useScrollReveal = () => {
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach(entry => {
+          if (entry.isIntersecting) {
+            // Stagger children if they have data-delay
+            const delay = entry.target.getAttribute("data-delay") || "0";
+            entry.target.style.animationDelay = delay + "ms";
+            entry.target.classList.add("visible");
+          }
+        });
+      },
+      { threshold: 0.12, rootMargin: "0px 0px -40px 0px" }
+    );
+    document.querySelectorAll(".co-reveal, .co-reveal-left, .co-reveal-right, .co-scale")
+      .forEach(el => observer.observe(el));
+    return () => observer.disconnect();
+  }, []);
+};
 
 // ─────────────────────────────────────────────
 // Helpers
@@ -126,8 +161,9 @@ const Toggle = ({ on, onToggle }) => (
 
 const Modal = ({ children, onClose, maxWidth = 480 }) => (
   <div onClick={e => e.target === e.currentTarget && onClose()} style={{
-    position: "fixed", inset: 0, background: "rgba(45,40,36,0.5)",
-    backdropFilter: "blur(16px)", display: "flex", alignItems: "center",
+    position: "fixed", inset: 0, background: "rgba(45,40,36,0.55)",
+    backdropFilter: "blur(20px)", WebkitBackdropFilter: "blur(20px)",
+    display: "flex", alignItems: "center",
     justifyContent: "center", zIndex: 300, padding: 16,
     animation: "co-fade 0.25s ease",
   }}>
@@ -577,6 +613,7 @@ const Shell = ({ view, setView, taskCount, toastMsg, onSignOut, tasks, schedule,
 // ─────────────────────────────────────────────
 const Landing = ({ onEnter }) => {
   const VIDEO_URL = "https://videos.pexels.com/video-files/31804129/13550134_1440_2560_30fps.mp4";
+  useScrollReveal();
 
   return (
     <div style={{ width: "100%", minHeight: "100vh", position: "relative", overflow: "hidden" }}>
@@ -731,10 +768,10 @@ const Landing = ({ onEnter }) => {
         <div style={{ maxWidth: 720, margin: "0 auto" }}>
           {/* Section label */}
           <div style={{ textAlign: "center", marginBottom: 64 }}>
-            <p style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 9, letterSpacing: "0.35em", textTransform: "uppercase", color: "#8C7355", marginBottom: 16 }}>
+            <p className="co-reveal" style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 9, letterSpacing: "0.35em", textTransform: "uppercase", color: "#8C7355", marginBottom: 16 }}>
               How it works
             </p>
-            <div style={{
+            <div className="co-reveal" data-delay="100" style={{
               fontFamily: "'EB Garamond', Georgia, serif",
               fontSize: "clamp(24px, 3vw, 36px)", color: "#3E2723",
               fontWeight: 400, lineHeight: 1.3,
@@ -746,11 +783,11 @@ const Landing = ({ onEnter }) => {
           {/* Three pillars */}
           <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 40, marginBottom: 80 }}>
             {[
-              { num: "01", title: "The Dump",   body: "Write anything. Meeting notes, scattered thoughts, half-formed ideas. Nothing is too messy for the inbox." },
-              { num: "02", title: "AI Sorting", body: "Your Chief of Staff parses urgency, importance, and deadlines. You receive a structured, prioritized brief." },
-              { num: "03", title: "The Desk",   body: "One cognitive load at a time. Morning, Afternoon, Evening — your day laid out with precision." },
+              { num: "01", title: "The Dump",   body: "Write anything. Meeting notes, scattered thoughts, half-formed ideas. Nothing is too messy for the inbox.", delay: 0 },
+              { num: "02", title: "AI Sorting", body: "Your Chief of Staff parses urgency, importance, and deadlines. You receive a structured, prioritized brief.", delay: 120 },
+              { num: "03", title: "The Desk",   body: "One cognitive load at a time. Morning, Afternoon, Evening — your day laid out with precision.", delay: 240 },
             ].map(p => (
-              <div key={p.num} style={{ paddingTop: 24, borderTop: `1px solid rgba(45,40,36,0.12)` }}>
+              <div key={p.num} className="co-reveal" data-delay={p.delay} style={{ paddingTop: 24, borderTop: `1px solid rgba(45,40,36,0.12)` }}>
                 <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 9, letterSpacing: "0.3em", color: "#8C7355", marginBottom: 16 }}>{p.num}</div>
                 <div style={{ fontFamily: "'EB Garamond', Georgia, serif", fontSize: 20, color: "#3E2723", marginBottom: 12, fontWeight: 500 }}>{p.title}</div>
                 <p style={{ fontFamily: "'EB Garamond', Georgia, serif", fontSize: 13, color: "rgba(45,40,36,0.6)", lineHeight: 1.75, fontStyle: "italic" }}>{p.body}</p>
@@ -759,7 +796,7 @@ const Landing = ({ onEnter }) => {
           </div>
 
           {/* Divider quote */}
-          <div style={{
+          <div className="co-scale" style={{
             textAlign: "center",
             padding: "56px 32px",
             background: "#3E2723",
@@ -771,7 +808,7 @@ const Landing = ({ onEnter }) => {
               color: "#F4F1EA", fontStyle: "italic", lineHeight: 1.5,
               marginBottom: 16,
             }}>
-              "The desk is clear. Enjoy it while it lasts."
+              "A clear desk is a clear mind."
             </p>
             <p style={{
               fontFamily: "'IBM Plex Mono', monospace",
@@ -783,17 +820,52 @@ const Landing = ({ onEnter }) => {
           {/* Features grid */}
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 2, marginBottom: 80 }}>
             {[
-              { icon: "⚡", label: "Executive Three",     desc: "Focus Mode limits today to 3 balanced priorities. Deadlines are never deferred." },
-              { icon: "📅", label: "Calendar Ledger",     desc: "Month and year views with ambient priority dots. Timezone-aware, always accurate." },
-              { icon: "✏️", label: "Editable Briefs",     desc: "Reschedule, reprioritize, or rename any task at any time. The desk adapts to you." },
-              { icon: "🔐", label: "Secure by Default",   desc: "Each desk is private. Row-level security ensures your briefs stay yours alone." },
+              {
+                icon: (
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#8C7355" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/>
+                  </svg>
+                ),
+                label: "Executive Three",
+                desc: "Focus Mode limits today to 3 balanced priorities. Deadlines are never deferred.",
+              },
+              {
+                icon: (
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#8C7355" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                    <rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>
+                  </svg>
+                ),
+                label: "Calendar Ledger",
+                desc: "Month and year views with ambient priority dots. Timezone-aware, always accurate.",
+              },
+              {
+                icon: (
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#8C7355" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+                  </svg>
+                ),
+                label: "Editable Briefs",
+                desc: "Reschedule, reprioritize, or rename any task at any time. The desk adapts to you.",
+              },
+              {
+                icon: (
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#8C7355" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                    <rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+                  </svg>
+                ),
+                label: "Secure by Default",
+                desc: "Each desk is private. Row-level security ensures your briefs stay yours alone.",
+              },
             ].map(f => (
               <div key={f.label} style={{
                 padding: "28px 24px",
                 background: "rgba(45,40,36,0.03)",
                 border: "1px solid rgba(45,40,36,0.07)",
-              }}>
-                <div style={{ fontSize: 18, marginBottom: 10 }}>{f.icon}</div>
+                transition: "background 0.3s, border-color 0.3s",
+              }}
+                onMouseEnter={e => { e.currentTarget.style.background = "rgba(140,115,85,0.05)"; e.currentTarget.style.borderColor = "rgba(140,115,85,0.2)"; }}
+                onMouseLeave={e => { e.currentTarget.style.background = "rgba(45,40,36,0.03)"; e.currentTarget.style.borderColor = "rgba(45,40,36,0.07)"; }}>
+                <div style={{ marginBottom: 12 }}>{f.icon}</div>
                 <div style={{ fontFamily: "'EB Garamond', Georgia, serif", fontSize: 16, color: "#3E2723", marginBottom: 6, fontWeight: 500 }}>{f.label}</div>
                 <p style={{ fontFamily: "'EB Garamond', Georgia, serif", fontSize: 12, color: "rgba(45,40,36,0.55)", lineHeight: 1.7, fontStyle: "italic" }}>{f.desc}</p>
               </div>
@@ -837,16 +909,25 @@ const Landing = ({ onEnter }) => {
 // Lobby
 // ─────────────────────────────────────────────
 const Lobby = ({ onSignIn, onSignUp }) => {
-  const [isSignUp,  setIsSignUp]  = useState(false);
-  const [email,     setEmail]     = useState("");
-  const [password,  setPassword]  = useState("");
-  const [error,     setError]     = useState(null);
-  const [working,   setWorking]   = useState(false);
-  const [confirmed, setConfirmed] = useState(false);
+  const [isSignUp,   setIsSignUp]   = useState(false);
+  const [email,      setEmail]      = useState("");
+  const [password,   setPassword]   = useState("");
+  const [error,      setError]      = useState(null);
+  const [working,    setWorking]    = useState(false);
+  const [confirmed,  setConfirmed]  = useState(false);
+  const [agreedToS,  setAgreedToS]  = useState(false);
+  const [showLegal,  setShowLegal]  = useState(null); // "tos" | "privacy" | null
+
+  const TOS_TEXT = "Terms of Service\n\nBy using The Corner Office, you agree to use the service lawfully. Your data is stored securely and never sold. We may update these terms with notice. The service is provided as-is. For questions, contact us via the app.";
+  const PRIVACY_TEXT = "Privacy Policy\n\nWe collect your email, encrypted password, and task data to provide the service. We use Supabase (auth/storage), Gemini (AI parsing), Vercel (hosting), and Brevo (email). Your data is protected by row-level security — only you can access it. We do not sell your data. You may delete your tasks anytime. Contact us for full account deletion.";
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError(null);
+    if (isSignUp && !agreedToS) {
+      setError("Please agree to the Terms of Service and Privacy Policy to continue.");
+      return;
+    }
     setWorking(true);
     try {
       if (isSignUp) { await onSignUp(email, password); setConfirmed(true); }
@@ -902,7 +983,7 @@ const Lobby = ({ onSignIn, onSignUp }) => {
             placeholder="••••••••" minLength={6}
             style={{ width: "100%", background: "transparent", border: "none", borderBottom: `1px solid rgba(45,40,36,0.2)`, padding: "6px 0", fontFamily: T.serif, fontSize: 16, color: T.ink, outline: "none" }} />
         </div>
-        <Btn type="submit" disabled={working} style={{ width: "100%", justifyContent: "center" }}>
+        <Btn type="submit" disabled={working || (isSignUp && !agreedToS)} style={{ width: "100%", justifyContent: "center" }}>
           {working ? "One moment..." : isSignUp ? "Register." : "Enter."}
         </Btn>
         <div style={{ textAlign: "center", marginTop: 20, paddingTop: 16, borderTop: `1px solid rgba(45,40,36,0.05)` }}>
@@ -1164,8 +1245,7 @@ const TaskCard = ({ task, onToggleComplete, onToggleSubtask, onDelete, onEdit, i
 // ─────────────────────────────────────────────
 // TaskGroup
 // ─────────────────────────────────────────────
-const TaskGroup = ({ title, tasks, isCurrent, isPast, onToggleComplete, onToggleSubtask, onDelete, onEdit }) => {
-  const [expandedId, setExpandedId] = useState(null);
+const TaskGroup = ({ title, tasks, isCurrent, isPast, onToggleComplete, onToggleSubtask, onDelete, onEdit, expandedId, setExpandedId }) => {
   if (!tasks?.length) return null;
 
   return (
@@ -1205,6 +1285,9 @@ const Desk = ({ tasks, ctx, onToggleComplete, onToggleSubtask, onDelete, onClear
   const [editingTask,     setEditingTask]     = useState(null);
   const [showWorkdayEdit, setShowWorkdayEdit] = useState(false);
   const [showCalendar,    setShowCalendar]    = useState(false);
+  // Global expanded task ID — shared across ALL task groups so blur is desk-wide
+  const [expandedId,      setExpandedId]      = useState(null);
+  const [deferredOpen,    setDeferredOpen]    = useState(false); // upcoming/deferred dropdown
 
   const tz           = ctx?.timezone || userTZ();
   const today        = getLocalDateISO(tz);
@@ -1245,7 +1328,16 @@ const Desk = ({ tasks, ctx, onToggleComplete, onToggleSubtask, onDelete, onClear
   const evening   = viewTasks.filter(t => t.time_of_day === "Evening");
   const unsorted  = viewTasks.filter(t => !["Morning","Afternoon","Evening"].includes(t.time_of_day));
 
-  const groupProps = { onToggleComplete, onToggleSubtask, onDelete, onEdit: setEditingTask };
+  // Reset expanded state when navigating days
+  // Pass expandedId/setter so all groups share one expanded task (desk-wide blur)
+  const groupProps = {
+    onToggleComplete: (id) => { setExpandedId(null); onToggleComplete(id); },
+    onToggleSubtask,
+    onDelete: (id) => { setExpandedId(null); onDelete(id); },
+    onEdit: setEditingTask,
+    expandedId,
+    setExpandedId,
+  };
 
   const navBtnStyle = {
     background: "none", border: `1px solid rgba(45,40,36,0.15)`, cursor: "pointer",
@@ -1331,11 +1423,11 @@ const Desk = ({ tasks, ctx, onToggleComplete, onToggleSubtask, onDelete, onClear
       {viewTasks.length === 0 ? (
         <div style={{ textAlign: "center", padding: "48px 32px", background: "rgba(45,40,36,0.02)", border: `1px dashed rgba(45,40,36,0.08)`, marginBottom: 24 }}>
           <p style={{ fontFamily: T.serif, fontSize: 18, color: "rgba(45,40,36,0.45)", fontStyle: "italic", marginBottom: 8 }}>
-            {isToday ? '"The desk is clear."' : "Nothing scheduled for this day."}
+            {isToday ? '"A clear desk is a clear mind."' : "Nothing scheduled for this day."}
           </p>
           {isToday && (
             <p style={{ fontFamily: T.mono, fontSize: 9, letterSpacing: "0.25em", textTransform: "uppercase", color: "rgba(45,40,36,0.35)" }}>
-              Enjoy it while it lasts.
+              Exactly where you want to be.
             </p>
           )}
         </div>
@@ -1348,9 +1440,48 @@ const Desk = ({ tasks, ctx, onToggleComplete, onToggleSubtask, onDelete, onClear
         </div>
       )}
 
-      {/* Upcoming / Deferred — only when Focus Mode OFF */}
+      {/* Upcoming / Deferred — collapsed by default, toggle to expand */}
       {!ctx?.focusMode && futureTasks.length > 0 && (
-        <TaskGroup title="Upcoming / Deferred" tasks={futureTasks} isCurrent={false} isPast={false} {...groupProps} />
+        <div style={{ marginTop: 24 }}>
+          <button
+            onClick={() => setDeferredOpen(o => !o)}
+            style={{
+              display: "flex", alignItems: "center", gap: 8, width: "100%",
+              background: "none", border: "none", cursor: "pointer",
+              padding: "12px 0", borderTop: "1px solid rgba(45,40,36,0.1)",
+              borderBottom: deferredOpen ? "none" : "1px solid rgba(45,40,36,0.05)",
+            }}>
+            <span style={{ fontFamily: T.mono, fontSize: 9, letterSpacing: "0.2em", textTransform: "uppercase", fontWeight: 500, color: "rgba(45,40,36,0.5)" }}>
+              Upcoming / Deferred
+            </span>
+            <span style={{ fontFamily: T.mono, fontSize: 9, color: T.brass }}>
+              ({futureTasks.length})
+            </span>
+            <span style={{
+              marginLeft: "auto", fontFamily: T.mono, fontSize: 10,
+              color: "rgba(45,40,36,0.4)",
+              display: "inline-block",
+              transform: deferredOpen ? "rotate(180deg)" : "rotate(0deg)",
+              transition: "transform 0.3s",
+            }}>▼</span>
+          </button>
+          {deferredOpen && (
+            <div className="co-slide">
+              {futureTasks.map(t => (
+                <TaskCard
+                  key={t.id} task={t}
+                  isBlurred={expandedId !== null && expandedId !== t.id}
+                  isExpanded={expandedId === t.id}
+                  onToggleExpand={() => setExpandedId(id => id === t.id ? null : t.id)}
+                  onToggleComplete={(id) => { setExpandedId(null); onToggleComplete(id); }}
+                  onToggleSubtask={onToggleSubtask}
+                  onDelete={(id) => { setExpandedId(null); onDelete(id); }}
+                  onEdit={setEditingTask}
+                />
+              ))}
+            </div>
+          )}
+        </div>
       )}
 
       {/* Filed (completed) with its own Clear button */}
