@@ -1563,11 +1563,57 @@ const Lobby = ({ onSignIn, onSignUp }) => {
             placeholder="••••••••" minLength={6}
             style={{ width: "100%", background: "transparent", border: "none", borderBottom: `1px solid rgba(45,40,36,0.2)`, padding: "6px 0", fontFamily: T.serif, fontSize: 16, color: T.ink, outline: "none" }} />
         </div>
+        {/* ToS checkbox — only shown on sign-up */}
+        {isSignUp && (
+          <div style={{ marginBottom: 20, display: "flex", alignItems: "flex-start", gap: 10 }}>
+            <input
+              type="checkbox"
+              id="tos-agree"
+              checked={agreedToS}
+              onChange={e => setAgreedToS(e.target.checked)}
+              style={{ marginTop: 3, accentColor: T.brass, cursor: "pointer", flexShrink: 0, width: 13, height: 13 }}
+            />
+            <label htmlFor="tos-agree" style={{ fontFamily: T.mono, fontSize: 9, letterSpacing: "0.1em", color: "rgba(45,40,36,0.65)", lineHeight: 1.8, cursor: "pointer" }}>
+              I agree to the{" "}
+              <button type="button" onClick={() => setShowLegal("tos")}
+                style={{ background: "none", border: "none", cursor: "pointer", fontFamily: T.mono, fontSize: 9, color: T.brass, textDecoration: "underline", textUnderlineOffset: 2, padding: 0 }}>
+                Terms of Service
+              </button>
+              {" "}and{" "}
+              <button type="button" onClick={() => setShowLegal("privacy")}
+                style={{ background: "none", border: "none", cursor: "pointer", fontFamily: T.mono, fontSize: 9, color: T.brass, textDecoration: "underline", textUnderlineOffset: 2, padding: 0 }}>
+                Privacy Policy
+              </button>
+            </label>
+          </div>
+        )}
+
+        {/* Legal modal */}
+        {showLegal && (
+          <Modal onClose={() => setShowLegal(null)} maxWidth={520}>
+            <div style={{ fontFamily: T.serif, fontSize: 20, color: T.walnut, marginBottom: 16 }}>
+              {showLegal === "tos" ? "Terms of Service" : "Privacy Policy"}
+            </div>
+            <div style={{
+              fontFamily: T.serif, fontSize: 13, color: "rgba(45,40,36,0.75)",
+              lineHeight: 1.85, whiteSpace: "pre-line",
+              maxHeight: "50vh", overflowY: "auto", paddingRight: 8,
+            }}>
+              {showLegal === "tos" ? TOS_TEXT : PRIVACY_TEXT}
+            </div>
+            <div style={{ marginTop: 20 }}>
+              <Btn onClick={() => { setAgreedToS(true); setShowLegal(null); }} style={{ width: "100%", justifyContent: "center" }}>
+                I agree. Close.
+              </Btn>
+            </div>
+          </Modal>
+        )}
+
         <Btn type="submit" disabled={working || (isSignUp && !agreedToS)} style={{ width: "100%", justifyContent: "center" }}>
           {working ? "One moment..." : isSignUp ? "Register." : "Enter."}
         </Btn>
         <div style={{ textAlign: "center", marginTop: 20, paddingTop: 16, borderTop: `1px solid rgba(45,40,36,0.05)` }}>
-          <button type="button" onClick={() => { setIsSignUp(!isSignUp); setError(null); setEmail(""); setPassword(""); }}
+          <button type="button" onClick={() => { setIsSignUp(!isSignUp); setError(null); setEmail(""); setPassword(""); setAgreedToS(false); }}
             style={{ background: "none", border: "none", cursor: "pointer", fontFamily: T.mono, fontSize: 9, letterSpacing: "0.2em", textTransform: "uppercase", color: T.brass, textDecoration: "underline", textUnderlineOffset: 3 }}>
             {isSignUp ? "Already registered? Log in." : "First day here? Register a desk."}
           </button>
