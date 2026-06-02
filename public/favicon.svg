@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <rect width="32" height="32" fill="#F4F1EA"/>
+  <rect x="2" y="2" width="28" height="28" fill="none" stroke="#3E2723" stroke-width="1.5"/>
+  <text x="16" y="22" font-family="Georgia, serif" font-size="13" font-weight="600"
+    text-anchor="middle" fill="#3E2723" letter-spacing="1">C/O</text>
+</svg>
