@@ -1,7 +1,3 @@
-// src/hooks/useSchedule.js
-// Persists the user's workday preferences (schedule context) in Supabase.
-// Stored in the `schedules` table, one row per user.
-
 import { useState, useEffect } from "react";
 import { supabase } from "../lib/supabase";
 
@@ -15,7 +11,7 @@ const DEFAULTS = {
   focus_mode:  false,
 };
 
-// Convert DB snake_case row → camelCase context object used by UI
+// ── DB row → UI context ──
 const toCtx = (row) => ({
   dayStart:    row.day_start,
   dayEnd:      row.day_end,
@@ -26,7 +22,7 @@ const toCtx = (row) => ({
   focusMode:   row.focus_mode,
 });
 
-// Convert UI camelCase context → DB snake_case
+// ── UI context → DB row ──
 const toDB = (ctx, userId) => ({
   user_id:     userId,
   day_start:   ctx.dayStart,
@@ -55,7 +51,6 @@ export function useSchedule(userId) {
         .single();
 
       if (error || !data) {
-        // No schedule yet — first-time user
         setIsFirstTime(true);
         setSchedule(toCtx({ ...DEFAULTS }));
       } else {
@@ -68,19 +63,15 @@ export function useSchedule(userId) {
     load();
   }, [userId]);
 
-  // Save (upsert) schedule to DB
   const saveSchedule = async (ctx) => {
     setSchedule(ctx);
     setIsFirstTime(false);
-
     const { error } = await supabase
       .from("schedules")
       .upsert(toDB(ctx, userId), { onConflict: "user_id" });
-
-    if (error) console.error("Save schedule error:", error);
+    if (error) console.error("saveSchedule:", error);
   };
 
-  // Update a single field (e.g. toggling focusMode from the Desk)
   const updateSchedule = async (ctx) => {
     setSchedule(ctx);
     await supabase

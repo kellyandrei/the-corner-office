@@ -1,7 +1,3 @@
-// src/hooks/useTasks.js
-// All database operations for tasks and subtasks.
-// Tasks are scoped to the authenticated user via RLS.
-
 import { useState, useEffect, useCallback } from "react";
 import { supabase } from "../lib/supabase";
 
@@ -30,7 +26,7 @@ export function useTasks(userId) {
       }));
       setTasks(normalized);
     } catch (err) {
-      console.error("fetchTasks error:", err);
+      console.error("fetchTasks:", err);
     } finally {
       setLoading(false);
     }
@@ -38,38 +34,42 @@ export function useTasks(userId) {
 
   useEffect(() => { fetchTasks(); }, [fetchTasks]);
 
-  // ── Insert batch of parsed tasks ─────────────────────────────────────────
+  // ── Insert batch of parsed tasks ──
   const addTasks = async (parsedTasks) => {
     if (!userId) return;
     for (const t of parsedTasks) {
       const { data: taskRow, error: taskErr } = await supabase
         .from("tasks")
         .insert({
-          user_id: userId,
-          title: t.title, description: t.description,
-          urgency: t.urgency, importance: t.importance,
+          user_id:              userId,
+          title:                t.title,
+          description:          t.description,
+          urgency:              t.urgency,
+          importance:           t.importance,
           suggested_time_block: t.suggested_time_block,
-          time_of_day: t.time_of_day, scheduled_date: t.scheduled_date,
-          has_hard_deadline: t.has_hard_deadline, status: "pending",
+          time_of_day:          t.time_of_day,
+          scheduled_date:       t.scheduled_date,
+          has_hard_deadline:    t.has_hard_deadline,
+          status:               "pending",
         })
-        .select().single();
+        .select()
+        .single();
 
-      if (taskErr) { console.error("Insert task error:", taskErr); continue; }
+      if (taskErr) { console.error("addTasks insert:", taskErr); continue; }
 
       if (t.subtasks?.length) {
         const subRows = t.subtasks.map(title => ({
           task_id: taskRow.id, title, status: "pending",
         }));
         const { error: subErr } = await supabase.from("subtasks").insert(subRows);
-        if (subErr) console.error("Insert subtasks error:", subErr);
+        if (subErr) console.error("addTasks subtasks:", subErr);
       }
     }
     await fetchTasks();
   };
 
-  // ── Edit a task (title, description, urgency, importance, date, etc.) ────
+  // ── Edit task fields ──
   const editTask = async (taskId, updates) => {
-    // Optimistic update
     setTasks(prev => prev.map(t => t.id === taskId ? { ...t, ...updates } : t));
 
     const { error } = await supabase
@@ -86,13 +86,10 @@ export function useTasks(userId) {
       })
       .eq("id", taskId);
 
-    if (error) {
-      console.error("Edit task error:", error);
-      await fetchTasks(); // Re-fetch to revert optimistic update if failed
-    }
+    if (error) { console.error("editTask:", error); await fetchTasks(); }
   };
 
-  // ── Toggle task complete ──────────────────────────────────────────────────
+  // ── Toggle task complete/pending ──
   const toggleComplete = async (taskId) => {
     const task = tasks.find(t => t.id === taskId);
     if (!task) return;
@@ -108,7 +105,7 @@ export function useTasks(userId) {
     await supabase.from("subtasks").update({ status: next }).eq("task_id", taskId);
   };
 
-  // ── Toggle subtask ────────────────────────────────────────────────────────
+  // ── Toggle subtask complete/pending ──
   const toggleSubtask = async (taskId, subtaskId) => {
     const task = tasks.find(t => t.id === taskId);
     if (!task) return;
@@ -135,13 +132,13 @@ export function useTasks(userId) {
     }
   };
 
-  // ── Delete task ───────────────────────────────────────────────────────────
+  // ── Delete single task ──
   const deleteTask = async (taskId) => {
     setTasks(prev => prev.filter(t => t.id !== taskId));
     await supabase.from("tasks").delete().eq("id", taskId);
   };
 
-  // ── Clear all ─────────────────────────────────────────────────────────────
+  // ── Delete all tasks for user ──
   const clearAll = async () => {
     setTasks([]);
     await supabase.from("tasks").delete().eq("user_id", userId);
