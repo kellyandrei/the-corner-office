@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { supabase } from "../lib/supabase";
 
+// V4: extend task schema with visibility, assignee_id, team_id for connections/teams
 export function useTasks(userId) {
   const [tasks,   setTasks]   = useState([]);
   const [loading, setLoading] = useState(false);
@@ -71,7 +72,6 @@ export function useTasks(userId) {
   // ── Edit task fields ──
   const editTask = async (taskId, updates) => {
     setTasks(prev => prev.map(t => t.id === taskId ? { ...t, ...updates } : t));
-
     const { error } = await supabase
       .from("tasks")
       .update({
@@ -87,6 +87,29 @@ export function useTasks(userId) {
       .eq("id", taskId);
 
     if (error) { console.error("editTask:", error); await fetchTasks(); }
+  };
+
+  // ── Batch update subtasks (add / rename / delete) ──
+  // Each entry: { id?, title, status, _action: 'keep'|'update'|'delete'|'new' }
+  const updateSubtasks = async (taskId, subtaskChanges) => {
+    for (const sub of subtaskChanges) {
+      if (sub._action === "keep") continue;
+
+      if (sub._action === "new") {
+        await supabase.from("subtasks").insert({
+          task_id: taskId,
+          title:   sub.title.trim(),
+          status:  "pending",
+        });
+      } else if (sub._action === "update" && sub.id) {
+        await supabase.from("subtasks")
+          .update({ title: sub.title.trim() })
+          .eq("id", sub.id);
+      } else if (sub._action === "delete" && sub.id) {
+        await supabase.from("subtasks").delete().eq("id", sub.id);
+      }
+    }
+    await fetchTasks();
   };
 
   // ── Toggle task complete/pending ──
@@ -144,5 +167,10 @@ export function useTasks(userId) {
     await supabase.from("tasks").delete().eq("user_id", userId);
   };
 
-  return { tasks, loading, addTasks, editTask, toggleComplete, toggleSubtask, deleteTask, clearAll, fetchTasks };
+  return {
+    tasks, loading,
+    addTasks, editTask, updateSubtasks,
+    toggleComplete, toggleSubtask,
+    deleteTask, clearAll, fetchTasks,
+  };
 }
