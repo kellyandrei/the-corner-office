@@ -1,6 +1,4 @@
-// api/parse.js  –  Vercel Serverless Function
-// Proxies requests to Google Gemini so the API key never touches the browser.
-// Free tier: gemini-2.5-flash-lite = 1,000 requests/day, 15 RPM — no billing required.
+export const config = { maxDuration: 10 };
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {
@@ -17,33 +15,19 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: "Missing system or user prompt." });
   }
 
-  // Current free tier models (May 2026)
-  // gemini-2.5-flash-lite: 1,000 req/day, 15 RPM — best for free tier
-  // gemini-2.5-flash: 250 req/day, 10 RPM — fallback
-  const models = [
-    "gemini-2.5-flash-lite",
-    "gemini-2.5-flash",
-  ];
-
+  const models = ["gemini-2.5-flash-lite", "gemini-2.5-flash"];
   let lastError = null;
 
   for (const model of models) {
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
 
     const payload = {
-      systemInstruction: {
-        parts: [{ text: system }],
-      },
-      contents: [
-        {
-          role: "user",
-          parts: [{ text: user }],
-        },
-      ],
+      systemInstruction: { parts: [{ text: system }] },
+      contents: [{ role: "user", parts: [{ text: user }] }],
       generationConfig: {
         responseMimeType: "application/json",
         temperature: 0.3,
-        maxOutputTokens: 2048,
+        maxOutputTokens: 8192,
       },
     };
 
@@ -57,21 +41,17 @@ export default async function handler(req, res) {
       if (!geminiRes.ok) {
         const errText = await geminiRes.text();
         lastError = `${model}: ${geminiRes.status} ${errText}`;
-        console.error(`Model ${model} failed:`, lastError);
         continue;
       }
 
       const data = await geminiRes.json();
-      const raw = data.candidates?.[0]?.content?.parts?.[0]?.text || "[]";
+      const raw  = data.candidates?.[0]?.content?.parts?.[0]?.text || "[]";
       const clean = raw.replace(/```json|```/g, "").trim();
       const tasks = JSON.parse(clean);
 
-      console.log(`Success with model: ${model}`);
       return res.status(200).json({ tasks });
-
     } catch (err) {
       lastError = `${model}: ${err.message}`;
-      console.error(`Model ${model} threw:`, err.message);
       continue;
     }
   }
