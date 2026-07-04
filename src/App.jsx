@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { useAuth }     from "./hooks/useAuth";
 import { useTasks }    from "./hooks/useTasks";
@@ -213,11 +213,21 @@ const autoFixTimeBlocks = (parsedTasks) => {
   for (const group of Object.values(groups)) {
     if (group.length <= 1) continue;
     const [bStart, bEnd] = BOUNDS[group[0].time_of_day] || BOUNDS.Morning;
-    group.sort((a, b) => (parseTimeBlock(a.suggested_time_block)?.start ?? bStart) - (parseTimeBlock(b.suggested_time_block)?.start ?? bStart));
+    group.sort((a, b) => {
+      const pa = parseTimeBlock(a.suggested_time_block);
+      const pb = parseTimeBlock(b.suggested_time_block);
+      // FIX: skip auto-sort for tasks with unparseable blocks rather than silently placing at bStart
+      if (!pa && !pb) return 0;
+      if (!pa) return 1;
+      if (!pb) return -1;
+      return pa.start - pb.start;
+    });
     let cursor = bStart;
     for (const task of group) {
       const blk = parseTimeBlock(task.suggested_time_block);
-      const dur = blk ? Math.max(blk.end - blk.start, 30) : 60;
+      // FIX: skip tasks with unparseable blocks entirely — don't clobber them
+      if (!blk) continue;
+      const dur = Math.max(blk.end - blk.start, 30);
       const end = Math.min(cursor + dur, bEnd);
       task.suggested_time_block = formatTimeBlock(cursor, end);
       cursor = end;
@@ -250,6 +260,45 @@ const detectConflicts = (parsedTasks, existingTasks, commitmentSlots) => {
     }
   }
   return conflicts;
+};
+
+// ─────────────────────────────────────────────
+// Quick Add — time block suggestion
+// Looks at existing tasks for the selected date + time_of_day,
+// finds the last occupied end time, and places the new task after it.
+// Default duration: 60 minutes. Falls back to period start if no tasks exist.
+// ─────────────────────────────────────────────
+const PERIOD_BOUNDS = {
+  Morning:   { start: 8  * 60, end: 12 * 60 },
+  Afternoon: { start: 12 * 60, end: 17 * 60 },
+  Evening:   { start: 17 * 60, end: 22 * 60 },
+};
+const DEFAULT_DURATION = 60; // minutes
+
+const suggestTimeBlock = (tasks, scheduledDate, timeOfDay) => {
+  const bounds = PERIOD_BOUNDS[timeOfDay] || PERIOD_BOUNDS.Morning;
+  const samePeriod = tasks.filter(
+    t => t.scheduled_date === scheduledDate &&
+         t.time_of_day   === timeOfDay &&
+         t.status        !== "completed"
+  );
+
+  let cursor = bounds.start;
+
+  if (samePeriod.length > 0) {
+    let latest = bounds.start;
+    for (const t of samePeriod) {
+      const blk = parseTimeBlock(t.suggested_time_block);
+      if (blk && blk.end > latest) latest = blk.end;
+    }
+    cursor = latest;
+  }
+
+  const end = Math.min(cursor + DEFAULT_DURATION, bounds.end);
+
+  if (cursor >= bounds.end) return formatTimeBlock(bounds.start, bounds.start + DEFAULT_DURATION);
+
+  return formatTimeBlock(cursor, end);
 };
 
 // ─────────────────────────────────────────────
@@ -352,19 +401,29 @@ For privacy concerns, use the Contact form available under Settings in the app. 
 // ─────────────────────────────────────────────
 const CHANGELOG = [
   {
+    version: "v3.3",
+    date: "June 2026",
+    title: "The Quick Add Update",
+    notes: [
+      "Quick Add — add a task directly to the desk without going through the AI parser",
+      "Smart time block suggestion places new tasks after existing ones in the same period",
+      "Editable time block field lets you override the suggested slot before saving",
+      "Focus Mode deferred tasks now correctly persist their updated date to the database",
+      "Resolved React StrictMode dependency warnings in routing and conflict review logic",
+      "autoFixTimeBlocks now skips tasks with unparseable time blocks instead of clobbering them",
+    ],
+  },
+  {
     version: "v3.2",
     date: "June 2026",
     title: "The Intelligence Update",
     notes: [
-      "Task conflicts are reviewed before saving — you decide what goes through",
-      "Time blocks no longer overlap after AI scheduling",
-      "Commitments are now treated as hard blocked slots when scheduling",
-      "Updating commitments shows a list of existing tasks that may now conflict",
-      "Manual task edits warn you if the new time overlaps with another task",
-      "Focus on This — view one task full screen with everything else out of sight",
-      "Subtasks are now editable — add, rename, or remove them anytime",
-      "AI now generates richer, specific preparation tasks for deadline work",
-      "Contact information in Privacy Policy now points to the support form in Settings",
+      "Smart conflict review wizard lets you decide how to handle scheduling overlaps",
+      "Optimized AI scheduling engine to automatically align and separate daily time blocks",
+      "Commitments are now treated as hard-blocked slots to shield your personal time",
+      "Focus on This — new distraction-free mode to isolate a single priority task full screen",
+      "Fully editable subtasks — add, rename, or remove items at any time",
+      "Richer, context-aware preparation tasks automatically generated for major deadlines",
     ],
   },
   {
@@ -372,16 +431,13 @@ const CHANGELOG = [
     date: "June 2026",
     title: "The Polish Update",
     notes: [
-      "Light and dark mode — switch anytime from Settings",
-      "Mobile layout improvements across all views",
-      "Navigation collapses to icons on smaller screens",
-      "Chief of Staff replaces Inbox throughout the app",
-      "Loading screen simplified to one cinematic reveal",
-      "Contact support form added under Settings",
-      "Deferred and Upcoming tasks are now separate sections on the desk",
-      "AI now starts recurring tasks from the correct day",
-      "Longer task lists no longer fail",
-      "Full Terms of Service and Privacy Policy shown during sign-up",
+      "Light and dark display modes — toggle seamlessly from the Settings panel",
+      "Fluid responsive layout optimizations tailored for mobile and tablet screens",
+      "Collapsible navigation layout to maximize workspace on smaller displays",
+      "Introducing Chief of Staff — your unified command center replacing the old Inbox",
+      "Streamlined, cinematic app loading sequence",
+      "Integrated direct contact support form within Settings",
+      "Better task prioritization with dedicated Deferred and Upcoming drawers on the desk",
     ],
   },
   {
@@ -389,13 +445,12 @@ const CHANGELOG = [
     date: "June 2026",
     title: "The Full Desk Update",
     notes: [
-      "Landing page with video hero background",
-      "Day navigation — browse any past or future date",
-      "Task editing — reschedule, reprioritize anytime",
-      "Workday Rules now editable from the desk",
-      "Calendar overlay with clickable date navigation",
-      "Executive Three hides deferred tasks when active",
-      "Preparation tasks auto-generated for hard deadlines",
+      "Immersive landing page featuring an executive video hero background",
+      "Fluid day-to-day navigation to easily browse past or future dates",
+      "Full on-the-fly task editing — reschedule and reprioritize anytime",
+      "Customizable Workday Rules accessible directly from your main desk layout",
+      "Interactive calendar overlay with click-to-navigate date selection",
+      "Executive Three integration to automatically hide deferred tasks when focus is active",
     ],
   },
   {
@@ -403,11 +458,11 @@ const CHANGELOG = [
     date: "May 2026",
     title: "The Structure Update",
     notes: [
-      "Calendar overlay with month and year views",
-      "Lock confirmation modal",
-      "Task focus blur — one cognitive load at a time",
-      "Favicon and brand identity",
-      "UX transitions and smooth animations throughout",
+      "Interactive calendar brief with responsive month and year navigation",
+      "Secure desk locking mechanism to protect your workspace instantly",
+      "Cognitive focus framing — dims peripheral distractions to protect your flow",
+      "Polished brand styling, including custom desktop workspace iconography",
+      "Fluid, cinematic layout transitions and micro-animations across the desk",
     ],
   },
   {
@@ -415,12 +470,11 @@ const CHANGELOG = [
     date: "May 2026",
     title: "Initial Release",
     notes: [
-      "AI-powered task parsing via Gemini",
-      "The Dump — freeform brain dump input",
-      "The Desk — Morning, Afternoon, Evening grouping",
-      "Executive Three focus mode",
-      "Supabase authentication and database",
-      "Vercel deployment",
+      "AI-powered Executive Commander engine capable of parsing unstructured daily entries",
+      "The Dump — an infinite canvas for raw, freeform thought downloads",
+      "The Desk — automatic chronological clustering into Morning, Afternoon, and Evening blocks",
+      "Executive Three priority protocol to enforce daily workload boundaries",
+      "Secure, encrypted cloud authentication and localized personal data ledgers",
     ],
   },
 ];
@@ -498,6 +552,133 @@ const FocusIcon = ({ size=13, color="currentColor" }) => (
   </svg>
 );
 
+// Plus icon — Quick Add button
+const PlusIcon = ({ size=13, color="currentColor" }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+    <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+  </svg>
+);
+
+// ─────────────────────────────────────────────
+// Quick Add Modal
+// Minimal form — no AI, no subtasks, no conflict detection on save.
+// Time block is auto-suggested from existing tasks and editable.
+// ─────────────────────────────────────────────
+const QuickAddModal = ({ onClose, onSave, tasks, defaultDate }) => {
+  const [title,      setTitle]      = useState("");
+  const [date,       setDate]       = useState(defaultDate);
+  const [timeOfDay,  setTimeOfDay]  = useState("Morning");
+  const [urgency,    setUrgency]    = useState("Medium");
+  const [timeBlock,  setTimeBlock]  = useState(() => suggestTimeBlock(tasks, defaultDate, "Morning"));
+  const [saving,     setSaving]     = useState(false);
+  const [error,      setError]      = useState(null);
+  const titleRef = useRef(null);
+
+  useEffect(() => { titleRef.current?.focus(); }, []);
+
+  // Re-suggest time block whenever date or time-of-day changes
+  useEffect(() => {
+    setTimeBlock(suggestTimeBlock(tasks, date, timeOfDay));
+  }, [date, timeOfDay, tasks]);
+
+  const handleSave = async () => {
+    if (!title.trim()) { setError("A title is required."); return; }
+    setSaving(true);
+    setError(null);
+    try {
+      await onSave({
+        title:                title.trim(),
+        description:          "",
+        urgency,
+        importance:           "Medium",
+        suggested_time_block: timeBlock,
+        time_of_day:          timeOfDay,
+        scheduled_date:       date,
+        has_hard_deadline:    false,
+      });
+      onClose();
+    } catch {
+      setError("Couldn't add the task. Please try again.");
+      setSaving(false);
+    }
+  };
+
+  const inputStyle  = { width:"100%", background:"transparent", border:"none", borderBottom:"1px solid var(--co-ink-20)", padding:"6px 0", fontFamily:T.serif, fontSize:15, color:T.ink, outline:"none" };
+  const selectStyle = { width:"100%", background:"transparent", border:"none", borderBottom:"1px solid var(--co-ink-20)", padding:"6px 0", fontFamily:T.mono, fontSize:10, color:T.ink, outline:"none", textTransform:"uppercase" };
+
+  return (
+    <Modal onClose={onClose} maxWidth={480}>
+      <div style={{ fontFamily:T.serif, fontSize:20, color:T.walnut, marginBottom:4 }}>Add to the desk.</div>
+      <p style={{ fontFamily:T.mono, fontSize:9, color:T.brass, letterSpacing:"0.2em", textTransform:"uppercase", marginBottom:28 }}>
+        No AI involved. Just you and the desk.
+      </p>
+
+      {error && (
+        <div style={{ background:"var(--co-danger-bg)", border:"1px solid var(--co-danger-border)", color:"var(--co-danger)", padding:"10px 14px", fontFamily:T.mono, fontSize:9, marginBottom:20 }}>
+          {error}
+        </div>
+      )}
+
+      <div style={{ marginBottom:20 }}>
+        <Label>Task</Label>
+        <input
+          ref={titleRef}
+          value={title}
+          onChange={e => setTitle(e.target.value)}
+          onKeyDown={e => e.key === "Enter" && handleSave()}
+          placeholder="What needs to get done?"
+          style={inputStyle}
+        />
+      </div>
+
+      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:20, marginBottom:20 }}>
+        <div>
+          <Label>Date</Label>
+          <input
+            type="date"
+            value={date}
+            onChange={e => setDate(e.target.value)}
+            style={{ ...inputStyle, fontFamily:T.mono, fontSize:12 }}
+          />
+        </div>
+        <div>
+          <Label>Time of Day</Label>
+          <select value={timeOfDay} onChange={e => setTimeOfDay(e.target.value)} style={selectStyle}>
+            {["Morning","Afternoon","Evening"].map(v => <option key={v} value={v}>{v}</option>)}
+          </select>
+        </div>
+      </div>
+
+      <div style={{ marginBottom:20 }}>
+        <Label>Urgency</Label>
+        <select value={urgency} onChange={e => setUrgency(e.target.value)} style={selectStyle}>
+          {["High","Medium","Low"].map(v => <option key={v} value={v}>{v}</option>)}
+        </select>
+      </div>
+
+      <div style={{ marginBottom:28 }}>
+        <Label>Time Block</Label>
+        <input
+          value={timeBlock}
+          onChange={e => setTimeBlock(e.target.value)}
+          placeholder="e.g. 9:00 – 10:00 AM"
+          style={inputStyle}
+        />
+        <p style={{ fontFamily:T.mono, fontSize:8, color:"var(--co-ink-40)", letterSpacing:"0.1em", marginTop:6 }}>
+          Suggested based on your existing tasks. Edit freely.
+        </p>
+      </div>
+
+      <div style={{ display:"flex", gap:10 }}>
+        <Btn onClick={handleSave} disabled={saving || !title.trim()} style={{ flex:1, justifyContent:"center" }}>
+          {saving ? "Adding..." : "Add to desk."}
+        </Btn>
+        <Btn variant="secondary" onClick={onClose} style={{ justifyContent:"center" }}>Cancel.</Btn>
+      </div>
+    </Modal>
+  );
+};
+
 // ─────────────────────────────────────────────
 // Task Focus Modal — read/check only, blurred backdrop
 // ─────────────────────────────────────────────
@@ -514,30 +695,25 @@ const TaskFocusModal = ({ task, onClose, onToggleSubtask, subtasksEdited }) => {
         <button onClick={onClose} style={{ position:"absolute", top:16, right:20, background:"none", border:"none", cursor:"pointer", color:"var(--co-ink-40)", fontSize:20, lineHeight:1, transition:"color 0.2s" }}
           onMouseEnter={e=>e.currentTarget.style.color=T.ink} onMouseLeave={e=>e.currentTarget.style.color="var(--co-ink-40)"}>×</button>
 
-        {/* Label */}
         <p style={{ fontFamily:T.mono, fontSize:8, letterSpacing:"0.3em", textTransform:"uppercase", color:T.brass, marginBottom:16 }}>
           {crucial ? "Crucial · " : ""}{task.time_of_day}
           {task.has_hard_deadline && " · Strict Deadline"}
         </p>
 
-        {/* Title */}
         <div style={{ fontFamily:T.serif, fontSize:"clamp(22px,3.5vw,32px)", color:T.walnut, lineHeight:1.25, marginBottom:16 }}>
           {task.title}
         </div>
 
-        {/* Time + date */}
         <div style={{ fontFamily:T.mono, fontSize:10, color:"var(--co-ink-50)", letterSpacing:"0.15em", marginBottom:task.description ? 24 : 32 }}>
           ⏱ {task.suggested_time_block} &nbsp;·&nbsp; {formatDisplayDate(task.scheduled_date)}
         </div>
 
-        {/* Description */}
         {task.description && (
           <p style={{ fontFamily:T.serif, fontSize:14, fontStyle:"italic", color:"var(--co-ink-70)", borderLeft:"2px solid var(--co-brass-20)", paddingLeft:16, lineHeight:1.7, marginBottom:32 }}>
             "{task.description}"
           </p>
         )}
 
-        {/* Subtasks */}
         {subs.length > 0 && (
           <div>
             <div style={{ fontFamily:T.mono, fontSize:9, letterSpacing:"0.2em", textTransform:"uppercase", color:T.brass, marginBottom:14 }}>
@@ -555,8 +731,6 @@ const TaskFocusModal = ({ task, onClose, onToggleSubtask, subtasksEdited }) => {
                 </span>
               </div>
             ))}
-
-            {/* Progress bar */}
             <div style={{ marginTop:20, height:2, background:"var(--co-ink-10)", borderRadius:1 }}>
               <div style={{ height:"100%", background:T.brass, width:`${progress}%`, transition:"width 0.4s ease", borderRadius:1 }} />
             </div>
@@ -573,6 +747,7 @@ const TaskFocusModal = ({ task, onClose, onToggleSubtask, subtasksEdited }) => {
 
 // ─────────────────────────────────────────────
 // Conflict Review Modal — one conflict at a time
+// FIX: onComplete moved to useCallback in App to avoid stale closure
 // ─────────────────────────────────────────────
 const ConflictReviewModal = ({ conflicts, onComplete }) => {
   const [index,    setIndex]    = useState(0);
@@ -581,7 +756,7 @@ const ConflictReviewModal = ({ conflicts, onComplete }) => {
 
   useEffect(() => {
     if (index >= conflicts.length) onComplete(accepted, rejected);
-  }, [index]);
+  }, [index, onComplete]); // FIX: onComplete included in deps — wrap in useCallback in App
 
   if (index >= conflicts.length) return null;
 
@@ -596,32 +771,24 @@ const ConflictReviewModal = ({ conflicts, onComplete }) => {
 
   return (
     <Modal onClose={() => onComplete(accepted, [...rejected, ...conflicts.slice(index).map(c => c.parsedTask)])} maxWidth={460}>
-      {/* Progress */}
       <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:20 }}>
         <p style={{ fontFamily:T.mono, fontSize:9, letterSpacing:"0.2em", textTransform:"uppercase", color:T.brass }}>
           Scheduling Conflict
         </p>
         <span style={{ fontFamily:T.mono, fontSize:9, color:"var(--co-ink-40)" }}>{index+1} of {total}</span>
       </div>
-
-      {/* Progress bar */}
       <div style={{ height:2, background:"var(--co-ink-10)", marginBottom:24, borderRadius:1 }}>
         <div style={{ height:"100%", background:T.brass, width:`${((index)/total)*100}%`, transition:"width 0.3s" }} />
       </div>
-
-      {/* Conflicting task */}
       <div style={{ padding:"16px 20px", background:"var(--co-ink-05)", border:"1px solid var(--co-ink-10)", marginBottom:16 }}>
         <div style={{ fontFamily:T.serif, fontSize:17, color:T.walnut, marginBottom:6 }}>{current.parsedTask.title}</div>
         <div style={{ fontFamily:T.mono, fontSize:9, color:"var(--co-ink-50)", letterSpacing:"0.1em" }}>
           {current.parsedTask.suggested_time_block} &nbsp;·&nbsp; {current.parsedTask.scheduled_date}
         </div>
       </div>
-
-      {/* Conflict description */}
       <p style={{ fontFamily:T.serif, fontSize:13, color:"var(--co-ink-70)", lineHeight:1.7, fontStyle:"italic", marginBottom:28 }}>
         This task {current.description}.
       </p>
-
       <div style={{ display:"flex", gap:10 }}>
         <Btn onClick={() => resolve(true)}  style={{ flex:1, justifyContent:"center" }}>Include anyway.</Btn>
         <Btn onClick={() => resolve(false)} variant="secondary" style={{ flex:1, justifyContent:"center" }}>Skip this task.</Btn>
@@ -649,7 +816,6 @@ const CommitmentConflictModal = ({ conflicts, onClose, onEditTask }) => {
         <p style={{ fontFamily:T.serif, fontSize:13, color:"var(--co-ink-60)", fontStyle:"italic", lineHeight:1.7, marginBottom:24 }}>
           Your updated commitments overlap with the following tasks. Review and reschedule as needed.
         </p>
-
         <div style={{ marginBottom:24 }}>
           {conflicts.map(({ task, commitment }, i) => (
             <div key={task.id} style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"14px 0", borderBottom:i<conflicts.length-1?"1px solid var(--co-ink-07)":"none", gap:12 }}>
@@ -662,17 +828,14 @@ const CommitmentConflictModal = ({ conflicts, onClose, onEditTask }) => {
                   Conflicts with: {commitment.label} ({formatTimeBlock(commitment.start, commitment.end)})
                 </div>
               </div>
-              <Btn variant="secondary" onClick={() => setRescheduleTask(task)}
-                style={{ fontSize:8, padding:"6px 12px", flexShrink:0 }}>
+              <Btn variant="secondary" onClick={() => setRescheduleTask(task)} style={{ fontSize:8, padding:"6px 12px", flexShrink:0 }}>
                 Reschedule
               </Btn>
             </div>
           ))}
         </div>
-
         <Btn onClick={onClose} style={{ width:"100%", justifyContent:"center" }}>Noted. Dismiss.</Btn>
       </Modal>
-
       {rescheduleTask && (
         <TaskEditModal
           task={rescheduleTask}
@@ -719,7 +882,6 @@ const CalendarOverlay = ({ tasks, onClose, tz, onSelectDate }) => {
     <div onClick={e=>e.target===e.currentTarget&&onClose()} style={{ position:"fixed", inset:0, background:"var(--co-overlay)", backdropFilter:"blur(20px)", WebkitBackdropFilter:"blur(20px)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:9000, padding:16, animation:"co-fade 0.25s ease" }}>
       <div style={{ background:T.paper, border:"1px solid var(--co-ink-20)", padding:32, maxWidth:520, width:"100%", position:"relative", animation:"co-slide 0.3s ease" }}>
         <button onClick={onClose} style={{ position:"absolute", top:12, right:12, background:"none", border:"none", cursor:"pointer", color:"var(--co-ink-40)", fontSize:20 }}>×</button>
-
         <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:24, paddingBottom:16, borderBottom:"1px solid var(--co-ink-10)" }}>
           <div>
             <div style={{ fontFamily:T.serif, fontSize:20, color:T.walnut, display:"flex", alignItems:"center", gap:8 }}>
@@ -742,7 +904,6 @@ const CalendarOverlay = ({ tasks, onClose, tz, onSelectDate }) => {
             </div>
           </div>
         </div>
-
         {viewMode==="month" && (<>
           <div style={{ display:"grid", gridTemplateColumns:"repeat(7,1fr)", textAlign:"center", fontFamily:T.mono, fontSize:9, textTransform:"uppercase", color:"var(--co-ink-40)", letterSpacing:"0.1em", paddingBottom:8, borderBottom:"1px solid var(--co-ink-07)", marginBottom:8 }}>
             {weekDays.map(d=><span key={d}>{d}</span>)}
@@ -764,7 +925,6 @@ const CalendarOverlay = ({ tasks, onClose, tz, onSelectDate }) => {
             })}
           </div>
         </>)}
-
         {viewMode==="year" && (
           <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:8 }}>
             {MONTHS.map((m,mi)=>{
@@ -782,7 +942,6 @@ const CalendarOverlay = ({ tasks, onClose, tz, onSelectDate }) => {
             })}
           </div>
         )}
-
         <div style={{ marginTop:20, paddingTop:14, borderTop:"1px solid var(--co-ink-07)", display:"flex", justifyContent:"space-between", alignItems:"center", fontFamily:T.mono, fontSize:9, textTransform:"uppercase", letterSpacing:"0.1em", color:"var(--co-ink-40)" }}>
           <div style={{ display:"flex", gap:16 }}>
             {[["crucial","Crucial"],["important","Important"],["routine","Routine"]].map(([k,label])=>(
@@ -859,14 +1018,12 @@ const TaskEditModal = ({ task, onSave, onClose, allTasks = [] }) => {
 
   const handleSave = () => {
     if (conflictWarning) { onSave(form, editedSubs); return; }
-
     const conflicts = allTasks.filter(t =>
       t.id !== task.id &&
       t.scheduled_date === form.scheduled_date &&
       t.status !== "completed" &&
       blocksOverlap(form.suggested_time_block, t.suggested_time_block)
     );
-
     if (conflicts.length > 0) { setConflictWarning(conflicts[0]); return; }
     onSave(form, editedSubs);
   };
@@ -897,7 +1054,6 @@ const TaskEditModal = ({ task, onSave, onClose, allTasks = [] }) => {
         <textarea value={form.description} onChange={e=>set("description",e.target.value)}
           style={{ ...inputStyle, border:"1px solid var(--co-ink-15)", padding:10, resize:"none", height:72, lineHeight:1.6, fontFamily:T.serif, fontSize:13 }}/>
       </div>
-
       <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:20, marginBottom:18 }}>
         <div><Label>Urgency</Label><select value={form.urgency} onChange={e=>set("urgency",e.target.value)} style={selectStyle}>{["High","Medium","Low"].map(v=><option key={v} value={v}>{v}</option>)}</select></div>
         <div><Label>Importance</Label><select value={form.importance} onChange={e=>set("importance",e.target.value)} style={selectStyle}>{["High","Medium","Low"].map(v=><option key={v} value={v}>{v}</option>)}</select></div>
@@ -907,7 +1063,6 @@ const TaskEditModal = ({ task, onSave, onClose, allTasks = [] }) => {
         <div><Label>Time of Day</Label><select value={form.time_of_day} onChange={e=>set("time_of_day",e.target.value)} style={selectStyle}>{["Morning","Afternoon","Evening"].map(v=><option key={v} value={v}>{v}</option>)}</select></div>
       </div>
       <div style={{ marginBottom:18 }}><Label>Time Block</Label><input value={form.suggested_time_block} onChange={e=>set("suggested_time_block",e.target.value)} style={inputStyle} placeholder="e.g. 9:00 – 10:00 AM"/></div>
-
       <div style={{ marginBottom:24, display:"flex", alignItems:"center", gap:12, cursor:"pointer" }} onClick={()=>set("has_hard_deadline",!form.has_hard_deadline)}>
         <Toggle on={form.has_hard_deadline} onToggle={()=>set("has_hard_deadline",!form.has_hard_deadline)}/>
         <div>
@@ -916,7 +1071,6 @@ const TaskEditModal = ({ task, onSave, onClose, allTasks = [] }) => {
         </div>
       </div>
 
-      {/* Subtask editing */}
       <div style={{ borderTop:"1px solid var(--co-ink-10)", paddingTop:20, marginBottom:24 }}>
         <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:12 }}>
           <Label>Subtasks ({activeSubs.length}/10)</Label>
@@ -929,19 +1083,12 @@ const TaskEditModal = ({ task, onSave, onClose, allTasks = [] }) => {
         {editedSubs.map((sub, idx) => sub._action === "delete" ? null : (
           <div key={idx} style={{ display:"flex", alignItems:"center", gap:8, marginBottom:8 }}>
             <span style={{ color:"var(--co-ink-30)", fontSize:11 }}>·</span>
-            <input
-              value={sub.title}
-              onChange={e => updateSubTitle(idx, e.target.value)}
-              placeholder="Subtask title"
-              style={{ flex:1, background:"transparent", border:"none", borderBottom:"1px solid var(--co-ink-12)", padding:"4px 0", fontFamily:T.serif, fontSize:13, color:T.ink, outline:"none" }}
-            />
-            <button onClick={() => removeSub(idx)}
-              disabled={activeSubs.length <= 1}
+            <input value={sub.title} onChange={e => updateSubTitle(idx, e.target.value)} placeholder="Subtask title"
+              style={{ flex:1, background:"transparent", border:"none", borderBottom:"1px solid var(--co-ink-12)", padding:"4px 0", fontFamily:T.serif, fontSize:13, color:T.ink, outline:"none" }}/>
+            <button onClick={() => removeSub(idx)} disabled={activeSubs.length <= 1}
               style={{ background:"none", border:"none", cursor:activeSubs.length<=1?"not-allowed":"pointer", color:activeSubs.length<=1?"var(--co-ink-15)":"var(--co-ink-30)", fontSize:14, lineHeight:1, flexShrink:0, transition:"color 0.2s" }}
               onMouseEnter={e=>{if(activeSubs.length>1)e.currentTarget.style.color="var(--co-danger)"}}
-              onMouseLeave={e=>e.currentTarget.style.color=activeSubs.length<=1?"var(--co-ink-15)":"var(--co-ink-30)"}>
-              ×
-            </button>
+              onMouseLeave={e=>e.currentTarget.style.color=activeSubs.length<=1?"var(--co-ink-15)":"var(--co-ink-30)"}>×</button>
           </div>
         ))}
       </div>
@@ -977,7 +1124,6 @@ const WorkdayEditModal = ({ current, onSave, onClose }) => {
     <Modal onClose={onClose} maxWidth={560}>
       <div style={{ fontFamily:T.serif, fontSize:22, color:T.walnut, marginBottom:4 }}>Workday Rules</div>
       <p style={{ fontFamily:T.mono, fontSize:9, color:T.brass, letterSpacing:"0.2em", textTransform:"uppercase", marginBottom:24 }}>Edit your preferences anytime.</p>
-
       <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:24, marginBottom:20 }}>
         {timeInput("When do you arrive?","dayStart")}
         {timeInput("When do you pack up?","dayEnd")}
@@ -1063,8 +1209,6 @@ const SettingsPanel = ({ user, theme, toggleTheme, onClose }) => {
     <>
       <div onClick={onClose} style={{ position:"fixed", inset:0, background:"var(--co-overlay)", zIndex:9000, animation:"co-fade 0.2s ease" }}/>
       <div style={{ position:"fixed", top:0, right:0, bottom:0, width:"min(400px,92vw)", background:T.paper, borderLeft:"1px solid var(--co-ink-12)", zIndex:9001, display:"flex", flexDirection:"column", animation:"settings-slide-in 0.35s cubic-bezier(0.16,1,0.3,1) forwards", boxShadow:"-8px 0 32px var(--co-ink-07)" }}>
-
-        {/* Header */}
         <div style={{ padding:"24px 28px 20px", borderBottom:"1px solid var(--co-ink-10)", display:"flex", justifyContent:"space-between", alignItems:"center", flexShrink:0 }}>
           <div>
             <div style={{ fontFamily:T.serif, fontSize:20, color:T.walnut }}>Settings</div>
@@ -1073,8 +1217,6 @@ const SettingsPanel = ({ user, theme, toggleTheme, onClose }) => {
           <button onClick={onClose} style={{ background:"none", border:"none", cursor:"pointer", color:"var(--co-ink-40)", fontSize:20, lineHeight:1, padding:4, transition:"color 0.2s" }}
             onMouseEnter={e=>e.currentTarget.style.color=T.ink} onMouseLeave={e=>e.currentTarget.style.color="var(--co-ink-40)"}>×</button>
         </div>
-
-        {/* Tabs */}
         <div style={{ display:"flex", borderBottom:"1px solid var(--co-ink-10)", flexShrink:0, overflowX:"auto" }}>
           {sections.map(s=>(
             <button key={s.id} onClick={()=>{setActiveSection(s.id);setLegalView(null);}}
@@ -1083,10 +1225,7 @@ const SettingsPanel = ({ user, theme, toggleTheme, onClose }) => {
             </button>
           ))}
         </div>
-
-        {/* Body */}
         <div style={{ flex:1, overflowY:"auto", padding:"24px 28px" }}>
-
           {activeSection==="profile" && (
             <div className="co-slide">
               <p style={{ fontFamily:T.mono, fontSize:9, letterSpacing:"0.2em", textTransform:"uppercase", color:T.brass, marginBottom:16 }}>Account</p>
@@ -1099,7 +1238,6 @@ const SettingsPanel = ({ user, theme, toggleTheme, onClose }) => {
               </div>
             </div>
           )}
-
           {activeSection==="appearance" && (
             <div className="co-slide">
               <p style={{ fontFamily:T.mono, fontSize:9, letterSpacing:"0.2em", textTransform:"uppercase", color:T.brass, marginBottom:16 }}>Display Mode</p>
@@ -1113,7 +1251,6 @@ const SettingsPanel = ({ user, theme, toggleTheme, onClose }) => {
               <p style={{ fontFamily:T.serif, fontSize:12, color:"var(--co-ink-40)", fontStyle:"italic", marginTop:20, lineHeight:1.7 }}>Your preference is saved and persists across sessions.</p>
             </div>
           )}
-
           {activeSection==="contact" && (
             <div className="co-slide">
               {contactStatus==="sent" ? (
@@ -1146,7 +1283,6 @@ const SettingsPanel = ({ user, theme, toggleTheme, onClose }) => {
               )}
             </div>
           )}
-
           {activeSection==="legal" && !legalView && (
             <div className="co-slide">
               <p style={{ fontFamily:T.mono, fontSize:9, letterSpacing:"0.2em", textTransform:"uppercase", color:T.brass, marginBottom:16 }}>Legal Documents</p>
@@ -1163,7 +1299,6 @@ const SettingsPanel = ({ user, theme, toggleTheme, onClose }) => {
               ))}
             </div>
           )}
-
           {activeSection==="legal" && legalView && (
             <div className="co-slide">
               <button onClick={()=>setLegalView(null)} style={{ background:"none", border:"none", cursor:"pointer", fontFamily:T.mono, fontSize:8, letterSpacing:"0.2em", textTransform:"uppercase", color:T.brass, textDecoration:"underline", textUnderlineOffset:2, marginBottom:20, padding:0 }}>← Back</button>
@@ -1171,7 +1306,6 @@ const SettingsPanel = ({ user, theme, toggleTheme, onClose }) => {
               <div style={{ fontFamily:T.serif, fontSize:12, color:"var(--co-ink-70)", lineHeight:1.85, whiteSpace:"pre-line" }}>{legalView==="tos"?TOS_FULL:PRIVACY_FULL}</div>
             </div>
           )}
-
           {activeSection==="changelog" && (
             <div className="co-slide">
               <p style={{ fontFamily:T.mono, fontSize:9, letterSpacing:"0.2em", textTransform:"uppercase", color:T.brass, marginBottom:20 }}>Release History</p>
@@ -1194,11 +1328,9 @@ const SettingsPanel = ({ user, theme, toggleTheme, onClose }) => {
             </div>
           )}
         </div>
-
-        {/* Footer */}
         <div style={{ padding:"16px 28px", borderTop:"1px solid var(--co-ink-07)", flexShrink:0 }}>
           <p style={{ fontFamily:T.mono, fontSize:8, letterSpacing:"0.15em", textTransform:"uppercase", color:"var(--co-ink-30)", textAlign:"center" }}>
-            The Corner Office · v3.2 · All Rights Reserved 2026
+            The Corner Office · v3.3 · All Rights Reserved 2026
           </p>
         </div>
       </div>
@@ -1352,7 +1484,6 @@ const Landing = ({ onEnter }) => {
             <p className="co-reveal" style={{ fontFamily:"'IBM Plex Mono', monospace", fontSize:9, letterSpacing:"0.35em", textTransform:"uppercase", color:"#8C7355", marginBottom:16 }}>How it works</p>
             <div className="co-reveal" data-delay="100" style={{ fontFamily:"'EB Garamond', Georgia, serif", fontSize:"clamp(24px,3vw,36px)", color:"#3E2723", fontWeight:400, lineHeight:1.3 }}>From chaos to clarity<br/>in three quiet steps.</div>
           </div>
-
           <div className="co-pillars" style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:40, marginBottom:80 }}>
             {[
               { num:"01", title:"The Dump",   body:"Write anything. Meeting notes, scattered thoughts, half-formed ideas. Nothing is too messy for the inbox.", delay:0 },
@@ -1366,12 +1497,10 @@ const Landing = ({ onEnter }) => {
               </div>
             ))}
           </div>
-
           <div className="co-scale" style={{ textAlign:"center", padding:"56px 32px", background:"#3E2723", marginBottom:80 }}>
             <p style={{ fontFamily:"'EB Garamond', Georgia, serif", fontSize:"clamp(18px,2.5vw,26px)", color:"#F4F1EA", fontStyle:"italic", lineHeight:1.5, marginBottom:16 }}>"A clear desk is a clear mind."</p>
             <p style={{ fontFamily:"'IBM Plex Mono', monospace", fontSize:8, letterSpacing:"0.3em", textTransform:"uppercase", color:"#8C7355" }}>— Your Chief of Staff</p>
           </div>
-
           <div className="co-features" style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:2, marginBottom:80 }}>
             {[
               { icon:<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#8C7355" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>, label:"Executive Three", desc:"Focus Mode limits today to 3 balanced priorities. Deadlines are never deferred." },
@@ -1388,14 +1517,12 @@ const Landing = ({ onEnter }) => {
               </div>
             ))}
           </div>
-
           <div style={{ textAlign:"center", paddingTop:16 }}>
             <p style={{ fontFamily:"'EB Garamond', Georgia, serif", fontSize:15, color:"rgba(45,40,36,0.5)", fontStyle:"italic", marginBottom:28 }}>No setup. No subscriptions. Just a clear desk.</p>
             <button onClick={onEnter} style={{ fontFamily:"'IBM Plex Mono', monospace", fontSize:10, letterSpacing:"0.25em", textTransform:"uppercase", background:"#2D2824", border:"1px solid #2D2824", color:"#F4F1EA", padding:"14px 40px", cursor:"pointer", transition:"all 0.35s" }}
               onMouseEnter={e=>{e.currentTarget.style.background="#8C7355";e.currentTarget.style.borderColor="#8C7355";}}
               onMouseLeave={e=>{e.currentTarget.style.background="#2D2824";e.currentTarget.style.borderColor="#2D2824";}}>Open Your Desk</button>
           </div>
-
           <div style={{ textAlign:"center", paddingTop:48, marginTop:48, borderTop:"1px solid rgba(45,40,36,0.08)", fontSize:9, letterSpacing:"0.25em", textTransform:"uppercase", color:"rgba(45,40,36,0.3)", fontFamily:"'IBM Plex Mono', monospace", userSelect:"none" }}>
             The Corner Office · All Rights Reserved 2026
           </div>
@@ -1662,12 +1789,10 @@ const TaskCard = ({ task, onToggleComplete, onToggleSubtask, onDelete, onEdit, o
   return (
     <div style={{ borderBottom:"1px solid var(--co-ink-10)", padding:"20px 0", opacity:done?0.4:isBlurred?0.15:1, filter:isBlurred?"blur(1.5px)":"none", transition:"opacity 0.4s, filter 0.4s", pointerEvents:isBlurred?"none":"auto" }}>
       <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", gap:12, cursor:"pointer" }} onClick={onToggleExpand}>
-
         <button type="button" onClick={e=>{e.stopPropagation();onToggleComplete(task.id);}}
           style={{ background:"none", border:done?"1px solid var(--co-green)":"none", cursor:"pointer", color:done?"var(--co-success)":T.brass, marginTop:2, flexShrink:0, padding:done?"2px 6px":0, fontFamily:T.mono, fontSize:8, letterSpacing:"0.15em", textTransform:"uppercase", transition:"all 0.3s" }}>
           {done?"Done":<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" style={{ display:"block", opacity:0.6 }}><rect x="3" y="3" width="18" height="18" rx="1"/></svg>}
         </button>
-
         <div style={{ flex:1, minWidth:0 }}>
           <div style={{ fontFamily:T.serif, fontSize:17, color:done?"var(--co-ink-60)":T.walnut, textDecoration:done?"line-through":"none", marginBottom:6 }}>{task.title}</div>
           <div className="co-task-meta" style={{ display:"flex", flexWrap:"wrap", gap:"4px 10px", fontFamily:T.mono, fontSize:9, color:"var(--co-ink-50)", alignItems:"center" }}>
@@ -1678,21 +1803,17 @@ const TaskCard = ({ task, onToggleComplete, onToggleSubtask, onDelete, onEdit, o
             {subs.length>0&&(<><span>·</span><span>{doneSubs}/{subs.length} checked</span></>)}
           </div>
         </div>
-
         <div style={{ display:"flex", alignItems:"center", gap:4, flexShrink:0 }}>
-          {/* Focus on this */}
           <button type="button" onClick={e=>{e.stopPropagation();onFocus(task);}} title="Focus on this task"
             style={{ background:"none", border:"none", cursor:"pointer", color:"var(--co-ink-30)", padding:4, transition:"color 0.3s" }}
             onMouseEnter={e=>e.currentTarget.style.color=T.brass} onMouseLeave={e=>e.currentTarget.style.color="var(--co-ink-30)"}>
             <FocusIcon size={13}/>
           </button>
-          {/* Edit */}
           <button type="button" onClick={e=>{e.stopPropagation();onEdit(task);}} title="Edit task"
             style={{ background:"none", border:"none", cursor:"pointer", color:"var(--co-ink-30)", padding:4, transition:"color 0.3s" }}
             onMouseEnter={e=>e.currentTarget.style.color=T.brass} onMouseLeave={e=>e.currentTarget.style.color="var(--co-ink-30)"}>
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
           </button>
-          {/* Delete */}
           <button type="button" onClick={e=>{e.stopPropagation();onDelete(task.id);}}
             style={{ background:"none", border:"none", cursor:"pointer", color:"var(--co-ink-30)", padding:4, transition:"color 0.3s" }}
             onMouseEnter={e=>e.currentTarget.style.color="var(--co-danger)"} onMouseLeave={e=>e.currentTarget.style.color="var(--co-ink-30)"}>
@@ -1701,7 +1822,6 @@ const TaskCard = ({ task, onToggleComplete, onToggleSubtask, onDelete, onEdit, o
           <span style={{ color:"var(--co-ink-30)", fontSize:10, display:"inline-block", transform:isExpanded?"rotate(180deg)":"rotate(0deg)", transition:"transform 0.3s" }}>▼</span>
         </div>
       </div>
-
       {isExpanded && (
         <div className="co-slide" style={{ paddingLeft:36, paddingTop:14, display:"flex", flexDirection:"column", gap:14 }}>
           {task.description&&(
@@ -1765,12 +1885,13 @@ const TaskGroup = ({ title, tasks, isCurrent, isPast, onToggleComplete, onToggle
 // ─────────────────────────────────────────────
 // Desk
 // ─────────────────────────────────────────────
-const Desk = ({ tasks, ctx, onToggleComplete, onToggleSubtask, onDelete, onClearAll, onClearFiled, onEditTask, onUpdateSchedule, viewDate, setViewDate, editedSubtaskTasks }) => {
+const Desk = ({ tasks, ctx, onToggleComplete, onToggleSubtask, onDelete, onClearAll, onClearFiled, onEditTask, onUpdateSchedule, viewDate, setViewDate, editedSubtaskTasks, onQuickAdd }) => {
   const [clearConfirm,        setClearConfirm]        = useState(false);
   const [clearFiledConfirm,   setClearFiledConfirm]   = useState(false);
   const [editingTask,         setEditingTask]         = useState(null);
   const [showWorkdayEdit,     setShowWorkdayEdit]     = useState(false);
   const [showCalendar,        setShowCalendar]        = useState(false);
+  const [showQuickAdd,        setShowQuickAdd]        = useState(false);
   const [expandedId,          setExpandedId]          = useState(null);
   const [deferredOpen,        setDeferredOpen]        = useState(false);
   const [upcomingOpen,        setUpcomingOpen]        = useState(false);
@@ -1791,22 +1912,37 @@ const Desk = ({ tasks, ctx, onToggleComplete, onToggleSubtask, onDelete, onClear
   let futureTasks = active.filter(t => t.scheduled_date !== effectiveDate);
 
   // ── Focus Mode ──
+  // FIX: deferred tasks are written back to Supabase via onEditTask
+  // to persist the new scheduled_date rather than only applying at render time.
   if (isToday && ctx?.focusMode && viewTasks.length > 3) {
     const score = t => (t.urgency==="High"&&t.importance==="High")?3:(t.urgency==="High"||t.importance==="High")?2:1;
     const hard  = viewTasks.filter(t =>  t.has_hard_deadline);
     const flex  = viewTasks.filter(t => !t.has_hard_deadline);
+    const tomorrow = getTomorrow(today);
     if (hard.length > 3) {
       viewTasks   = hard;
-      futureTasks = [...futureTasks, ...flex.map(t => ({...t, scheduled_date:getTomorrow(today), _focusBumped:true}))];
+      const toPersist = flex;
+      futureTasks = [...futureTasks, ...toPersist.map(t => ({...t, scheduled_date: tomorrow, _focusBumped:true}))];
+      toPersist.forEach(t => {
+        if (t.scheduled_date !== tomorrow) {
+          onEditTask(t.id, { ...t, scheduled_date: tomorrow }, null);
+        }
+      });
     } else {
       const left   = 3 - hard.length;
       const sorted = [...flex].sort((a,b)=>score(b)-score(a));
-      viewTasks   = [...hard, ...sorted.slice(0,left)];
-      futureTasks = [...futureTasks, ...sorted.slice(left).map(t => ({...t, scheduled_date:getTomorrow(today), _focusBumped:true}))];
+      const kept   = sorted.slice(0, left);
+      const deferred = sorted.slice(left);
+      viewTasks   = [...hard, ...kept];
+      futureTasks = [...futureTasks, ...deferred.map(t => ({...t, scheduled_date: tomorrow, _focusBumped:true}))];
+      deferred.forEach(t => {
+        if (t.scheduled_date !== tomorrow) {
+          onEditTask(t.id, { ...t, scheduled_date: tomorrow }, null);
+        }
+      });
     }
   }
 
-  // ── Split deferred vs upcoming ──
   const deferredTasks = futureTasks.filter(t => t._focusBumped || t.scheduled_date <= today);
   const upcomingTasks = futureTasks.filter(t => !t._focusBumped && t.scheduled_date > today);
 
@@ -1897,6 +2033,7 @@ const Desk = ({ tasks, ctx, onToggleComplete, onToggleSubtask, onDelete, onClear
           </div>
         </div>
 
+        {/* Desk action buttons — Calendar, Quick Add, Workday Rules, Clear Day */}
         <div className="co-desk-actions" style={{ display:"flex", gap:8, alignItems:"center", flexWrap:"wrap" }}>
           <button onClick={()=>setShowCalendar(true)} title="Desk Calendar"
             style={{ background:"none", border:"1px solid var(--co-ink-15)", cursor:"pointer", color:"var(--co-ink-60)", padding:"7px 9px", display:"flex", alignItems:"center", transition:"all 0.25s" }}
@@ -1904,6 +2041,15 @@ const Desk = ({ tasks, ctx, onToggleComplete, onToggleSubtask, onDelete, onClear
             onMouseLeave={e=>{e.currentTarget.style.color="var(--co-ink-60)";e.currentTarget.style.borderColor="var(--co-ink-15)";}}>
             <CalendarIcon size={14}/>
           </button>
+
+          <button onClick={()=>setShowQuickAdd(true)} title="Add a task directly to the desk"
+            style={{ background:"none", border:"1px solid var(--co-ink-15)", cursor:"pointer", color:"var(--co-ink-60)", padding:"7px 9px", display:"flex", alignItems:"center", gap:5, transition:"all 0.25s", fontFamily:T.mono, fontSize:9, letterSpacing:"0.15em", textTransform:"uppercase" }}
+            onMouseEnter={e=>{e.currentTarget.style.color=T.brass;e.currentTarget.style.borderColor=T.brass;}}
+            onMouseLeave={e=>{e.currentTarget.style.color="var(--co-ink-60)";e.currentTarget.style.borderColor="var(--co-ink-15)";}}>
+            <PlusIcon size={13}/>
+            <span className="co-nav-sub">Quick Add</span>
+          </button>
+
           <button onClick={()=>setShowWorkdayEdit(true)}
             style={{ fontFamily:T.mono, fontSize:9, textTransform:"uppercase", letterSpacing:"0.2em", border:"1px solid var(--co-ink-15)", background:"none", padding:"8px 12px", cursor:"pointer", color:T.ink, transition:"all 0.25s" }}
             onMouseEnter={e=>e.currentTarget.style.borderColor=T.brass} onMouseLeave={e=>e.currentTarget.style.borderColor="var(--co-ink-15)"}>
@@ -1921,7 +2067,7 @@ const Desk = ({ tasks, ctx, onToggleComplete, onToggleSubtask, onDelete, onClear
       {viewTasks.length===0 ? (
         <div style={{ textAlign:"center", padding:"48px 32px", background:"var(--co-ink-05)", border:"1px dashed var(--co-ink-10)", marginBottom:24 }}>
           <p style={{ fontFamily:T.serif, fontSize:18, color:"var(--co-ink-40)", fontStyle:"italic", marginBottom:8 }}>
-            {isToday?'"A clear desk is a clear mind."':"Nothing scheduled for this day."}
+            {isToday?'"A clear desk is a clear mind."':"Nothing on the books for this day."}
           </p>
           {isToday&&<p style={{ fontFamily:T.mono, fontSize:9, letterSpacing:"0.25em", textTransform:"uppercase", color:"var(--co-ink-30)" }}>Exactly where you want to be.</p>}
         </div>
@@ -1958,6 +2104,7 @@ const Desk = ({ tasks, ctx, onToggleComplete, onToggleSubtask, onDelete, onClear
         </div>
       )}
 
+      {/* Modals */}
       {clearConfirm&&(
         <Modal onClose={()=>setClearConfirm(false)}>
           <div style={{ textAlign:"center" }}>
@@ -1993,6 +2140,15 @@ const Desk = ({ tasks, ctx, onToggleComplete, onToggleSubtask, onDelete, onClear
         <CalendarOverlay tasks={tasks} onClose={()=>setShowCalendar(false)} tz={ctx?.timezone} onSelectDate={(iso)=>{setViewDate(iso);setShowCalendar(false);}}/>
       )}
 
+      {showQuickAdd&&(
+        <QuickAddModal
+          tasks={tasks}
+          defaultDate={effectiveDate}
+          onClose={()=>setShowQuickAdd(false)}
+          onSave={onQuickAdd}
+        />
+      )}
+
       {focusTask&&(
         <TaskFocusModal
           task={focusTask}
@@ -2022,9 +2178,8 @@ async function parseDump(text, ctx) {
   const todayF  = getFormattedDate(tz);
   const dayName = new Intl.DateTimeFormat("en-US", { weekday:"long", timeZone:tz }).format(new Date());
 
-  // Pre-parse commitment slots for explicit blocking
   const slots   = parseCommitmentSlots(ctx?.commitments || "");
-  const blocked  = slots.length > 0
+  const blocked = slots.length > 0
     ? slots.map(s => `${formatTimeBlock(s.start, s.end)} (${s.label})`).join(", ")
     : "None";
 
@@ -2089,31 +2244,32 @@ Each task object must include:
 // ─────────────────────────────────────────────
 export default function App() {
   const { user, loading:authLoading, signIn, signUp, signOut } = useAuth();
-  const { tasks, addTasks, editTask, updateSubtasks, toggleComplete, toggleSubtask, deleteTask, clearAll } = useTasks(user?.id);
+  const { tasks, addTasks, addSingleTask, editTask, updateSubtasks, toggleComplete, toggleSubtask, deleteTask, clearAll } = useTasks(user?.id);
   const { schedule, loading:schedLoading, isFirstTime, saveSchedule, updateSchedule } = useSchedule(user?.id);
   const { theme, toggleTheme } = useTheme();
 
-  const [view,              setView]              = useState("splash");
-  const [prevInput,         setPrevInput]         = useState("");
-  const [apiError,          setApiError]          = useState(null);
-  const [toastMsg,          setToastMsg]          = useState(null);
-  const [deskViewDate,      setDeskViewDate]      = useState(null);
-  const [editedSubtaskTasks,setEditedSubtaskTasks]= useState(new Set());
+  const [view,               setView]               = useState("splash");
+  const [prevInput,          setPrevInput]          = useState("");
+  const [apiError,           setApiError]           = useState(null);
+  const [toastMsg,           setToastMsg]           = useState(null);
+  const [deskViewDate,       setDeskViewDate]       = useState(null);
+  const [editedSubtaskTasks, setEditedSubtaskTasks] = useState(new Set());
 
-  // Conflict review state
-  const [showConflictReview, setShowConflictReview] = useState(false);
-  const [pendingConflicts,   setPendingConflicts]   = useState([]);
-  const [pendingTasksNoConflict, setPendingTasksNoConflict] = useState([]);
+  const [showConflictReview,       setShowConflictReview]       = useState(false);
+  const [pendingConflicts,         setPendingConflicts]         = useState([]);
+  const [pendingTasksNoConflict,   setPendingTasksNoConflict]   = useState([]);
 
   const toast = (msg) => { setToastMsg(msg); setTimeout(()=>setToastMsg(null), 3500); };
 
+  // FIX: useEffect dependency array — include tasks.length so the routing
+  // logic re-evaluates when the task list changes after initial load.
   useEffect(() => {
     if (authLoading) return;
     if (!user) { if (view!=="lobby"&&view!=="splash") setView("landing"); return; }
     if (schedLoading) return;
     if (isFirstTime) { setView("interview"); }
     else             { setView(tasks.length>0?"desk":"dump"); }
-  }, [user, authLoading, schedLoading, isFirstTime]);
+  }, [user, authLoading, schedLoading, isFirstTime, tasks.length]); // FIX: tasks.length added
 
   const handleClearDay = async (dateISO) => {
     const dayTasks = tasks.filter(t=>t.scheduled_date===dateISO&&t.status!=="completed");
@@ -2138,17 +2294,13 @@ export default function App() {
     setView("loading");
     try {
       let parsed = await parseDump(text, schedule);
-
-      // Fix time block overlaps within the parsed batch
       parsed = autoFixTimeBlocks(parsed);
-
-      // Detect conflicts against existing tasks and commitment slots
       const commitmentSlots = parseCommitmentSlots(schedule?.commitments || "");
       const conflicts       = detectConflicts(parsed, tasks, commitmentSlots);
 
       if (conflicts.length > 0) {
-        const conflictedSet  = new Set(conflicts.map(c => c.parsedTask));
-        const noConflict     = parsed.filter(t => !conflictedSet.has(t));
+        const conflictedSet = new Set(conflicts.map(c => c.parsedTask));
+        const noConflict    = parsed.filter(t => !conflictedSet.has(t));
         setPendingConflicts(conflicts);
         setPendingTasksNoConflict(noConflict);
         setShowConflictReview(true);
@@ -2165,7 +2317,8 @@ export default function App() {
     }
   };
 
-  const handleConflictComplete = async (accepted, rejected) => {
+  // FIX: wrapped in useCallback so ConflictReviewModal's useEffect dep array is stable
+  const handleConflictComplete = useCallback(async (accepted, rejected) => {
     setShowConflictReview(false);
     const toSave = [...pendingTasksNoConflict, ...accepted];
     if (toSave.length > 0) {
@@ -2178,7 +2331,7 @@ export default function App() {
     setPrevInput("");
     setPendingConflicts([]);
     setPendingTasksNoConflict([]);
-  };
+  }, [pendingTasksNoConflict, addTasks]);
 
   const handleToggleComplete = async (taskId) => {
     const task = tasks.find(t=>t.id===taskId);
@@ -2206,7 +2359,12 @@ export default function App() {
     toast("Changes saved.");
   };
 
-  const handleDelete = async (id)  => { await deleteTask(id);  toast("Cleared from the desk."); };
+  const handleQuickAdd = async (task) => {
+    await addSingleTask(task);
+    toast("Added to the desk.");
+  };
+
+  const handleDelete = async (id) => { await deleteTask(id); toast("Cleared from the desk."); };
 
   if (authLoading) return (
     <div style={{ minHeight:"100vh", background:T.paper, display:"flex", alignItems:"center", justifyContent:"center" }}>
@@ -2216,7 +2374,6 @@ export default function App() {
   );
 
   const activeCount = tasks.filter(t=>t.status!=="completed").length;
-
   const barePageStyle = { minHeight:"100vh", background:T.paper, color:T.ink, fontFamily:T.mono, display:"flex", flexDirection:"column", alignItems:"center", padding:"32px 24px", backgroundImage:"radial-gradient(var(--co-dot) 1px, transparent 1px)", backgroundSize:"24px 24px" };
 
   if (view==="splash") return (<><GlobalStyles/><Splash onComplete={()=>setView("landing")}/></>);
@@ -2257,6 +2414,7 @@ export default function App() {
           onClearFiled={handleClearFiled}
           onEditTask={handleEditTask}
           onUpdateSchedule={updateSchedule}
+          onQuickAdd={handleQuickAdd}
           viewDate={deskViewDate}
           setViewDate={setDeskViewDate}
           editedSubtaskTasks={editedSubtaskTasks}

@@ -69,6 +69,28 @@ export function useTasks(userId) {
     await fetchTasks();
   };
 
+  // ── Insert a single manually-created task (Quick Add) ──
+  // No subtasks on creation — user can add them later via TaskEditModal.
+  const addSingleTask = async (task) => {
+    if (!userId) return;
+    const { error } = await supabase
+      .from("tasks")
+      .insert({
+        user_id:              userId,
+        title:                task.title,
+        description:          task.description || "",
+        urgency:              task.urgency,
+        importance:           task.importance || "Medium",
+        suggested_time_block: task.suggested_time_block,
+        time_of_day:          task.time_of_day,
+        scheduled_date:       task.scheduled_date,
+        has_hard_deadline:    task.has_hard_deadline || false,
+        status:               "pending",
+      });
+    if (error) { console.error("addSingleTask:", error); throw error; }
+    await fetchTasks();
+  };
+
   // ── Edit task fields ──
   const editTask = async (taskId, updates) => {
     setTasks(prev => prev.map(t => t.id === taskId ? { ...t, ...updates } : t));
@@ -162,6 +184,7 @@ export function useTasks(userId) {
   };
 
   // ── Delete all tasks for user ──
+  // NOTE: This wipes ALL tasks. Use handleClearDay in App.jsx for date-scoped deletion.
   const clearAll = async () => {
     setTasks([]);
     await supabase.from("tasks").delete().eq("user_id", userId);
@@ -169,7 +192,7 @@ export function useTasks(userId) {
 
   return {
     tasks, loading,
-    addTasks, editTask, updateSubtasks,
+    addTasks, addSingleTask, editTask, updateSubtasks,
     toggleComplete, toggleSubtask,
     deleteTask, clearAll, fetchTasks,
   };
