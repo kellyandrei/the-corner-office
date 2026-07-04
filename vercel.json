@@ -1,6 +1,6 @@
 {
   "functions": {
-    "api/parse.js":   { "maxDuration": 10 },
+    "api/parse.js":   { "maxDuration": 60 },
     "api/contact.js": { "maxDuration": 10 }
   },
   "rewrites": [
