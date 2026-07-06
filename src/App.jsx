@@ -2056,11 +2056,18 @@ const Desk = ({ tasks, ctx, onToggleComplete, onToggleSubtask, onDelete, onClear
             onMouseEnter={e=>e.currentTarget.style.borderColor=T.brass} onMouseLeave={e=>e.currentTarget.style.borderColor="var(--co-ink-15)"}>
             ⚙ Workday Rules
           </button>
-          {viewTasks.length>0&&(
-            <button onClick={()=>setClearConfirm(true)} style={{ fontFamily:T.mono, fontSize:9, textTransform:"uppercase", letterSpacing:"0.2em", background:"none", border:"1px solid transparent", color:"var(--co-danger)", cursor:"pointer", padding:"8px 12px", alignSelf:"center" }}>
-              Clear Day
-            </button>
-          )}
+          <button
+            onClick={()=>viewTasks.length>0 && setClearConfirm(true)}
+            disabled={viewTasks.length===0}
+            style={{
+              fontFamily:T.mono, fontSize:9, textTransform:"uppercase", letterSpacing:"0.2em",
+              background:"none", border:"1px solid transparent", cursor:viewTasks.length>0?"pointer":"default",
+              padding:"8px 12px", alignSelf:"center",
+              color: viewTasks.length>0 ? "var(--co-danger)" : "transparent",
+              pointerEvents: viewTasks.length>0 ? "auto" : "none",
+            }}>
+            Clear Day
+          </button>
         </div>
       </div>
 
