@@ -2035,7 +2035,7 @@ const Desk = ({ tasks, ctx, onToggleComplete, onToggleSubtask, onDelete, onClear
         </div>
 
         {/* Desk action buttons — Calendar, Quick Add, Workday Rules, Clear Day */}
-        <div className="co-desk-actions" style={{ display:"flex", gap:8, alignItems:"center", flexWrap:"wrap" }}>
+        <div className="co-desk-actions" style={{ display:"flex", gap:6, alignItems:"center", flexWrap:"nowrap" }}>
           <button onClick={()=>setShowCalendar(true)} title="Desk Calendar"
             style={{ background:"none", border:"1px solid var(--co-ink-15)", cursor:"pointer", color:"var(--co-ink-60)", padding:"7px 9px", display:"flex", alignItems:"center", transition:"all 0.25s" }}
             onMouseEnter={e=>{e.currentTarget.style.color=T.brass;e.currentTarget.style.borderColor=T.brass;}}
