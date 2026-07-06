@@ -411,6 +411,7 @@ const CHANGELOG = [
       "Focus Mode deferred tasks now correctly persist their updated date to the database",
       "Resolved React StrictMode dependency warnings in routing and conflict review logic",
       "autoFixTimeBlocks now skips tasks with unparseable time blocks instead of clobbering them",
+      "Fixed desk header button row shifting position between empty and populated states",
     ],
   },
   {
@@ -2013,7 +2014,7 @@ const Desk = ({ tasks, ctx, onToggleComplete, onToggleSubtask, onDelete, onClear
   return (
     <div className="co-fade" style={{ width:"100%" }}>
       {/* Header */}
-      <div className="co-desk-top" style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-end", borderBottom:"1px solid var(--co-ink-10)", paddingBottom:24, marginBottom:24, gap:16 }}>
+      <div className="co-desk-top" style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", borderBottom:"1px solid var(--co-ink-10)", paddingBottom:24, marginBottom:24, gap:16 }}>
         <div>
           <div style={{ fontFamily:T.serif, fontSize:32, color:T.walnut }}>Your desk is ready.</div>
           <div style={{ display:"flex", alignItems:"center", gap:10, marginTop:10 }}>
@@ -2056,7 +2057,7 @@ const Desk = ({ tasks, ctx, onToggleComplete, onToggleSubtask, onDelete, onClear
             ⚙ Workday Rules
           </button>
           {viewTasks.length>0&&(
-            <button onClick={()=>setClearConfirm(true)} style={{ fontFamily:T.mono, fontSize:9, textTransform:"uppercase", letterSpacing:"0.2em", background:"none", border:"none", color:"var(--co-danger)", cursor:"pointer", padding:"8px 12px" }}>
+            <button onClick={()=>setClearConfirm(true)} style={{ fontFamily:T.mono, fontSize:9, textTransform:"uppercase", letterSpacing:"0.2em", background:"none", border:"1px solid transparent", color:"var(--co-danger)", cursor:"pointer", padding:"8px 12px", alignSelf:"center" }}>
               Clear Day
             </button>
           )}
